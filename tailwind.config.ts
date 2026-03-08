@@ -13,6 +13,9 @@ export default {
       },
     },
     extend: {
+      screens: {
+        'xs': '380px',
+      },
       fontFamily: {
         sans: ['IBM Plex Sans Thai', 'Space Grotesk', 'sans-serif'],
         display: ['Space Grotesk', 'sans-serif'],

@@ -101,15 +101,15 @@ export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete
               </div>
             )}
 
-            <div className="flex justify-end gap-1">
-              <Button variant="ghost" size="sm" className="text-primary" onClick={(e) => { e.stopPropagation(); onEdit(r); }}>
-                <Pencil className="h-3.5 w-3.5 mr-1" /> แก้ไข
+            <div className="flex justify-end gap-1 sm:gap-2 flex-wrap">
+              <Button variant="ghost" size="sm" className="text-primary h-11 px-3" onClick={(e) => { e.stopPropagation(); onEdit(r); }}>
+                <Pencil className="h-4 w-4 mr-1" /> แก้ไข
               </Button>
-              <Button variant="ghost" size="sm" className="text-primary" onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
-                <Copy className="h-3.5 w-3.5 mr-1" /> คัดลอก
+              <Button variant="ghost" size="sm" className="text-primary h-11 px-3" onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
+                <Copy className="h-4 w-4 mr-1" /> คัดลอก
               </Button>
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(r.id); }}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" /> ลบ
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-11 px-3" onClick={(e) => { e.stopPropagation(); onDelete(r.id); }}>
+                <Trash2 className="h-4 w-4 mr-1" /> ลบ
               </Button>
             </div>
           </div>
