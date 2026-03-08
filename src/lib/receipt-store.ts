@@ -108,6 +108,15 @@ export function saveReceipt(receipt: Omit<Receipt, "id" | "createdAt">): Receipt
   return newReceipt;
 }
 
+export function updateReceipt(id: string, data: Partial<Omit<Receipt, "id" | "createdAt">>): Receipt | null {
+  const receipts = getReceipts();
+  const idx = receipts.findIndex((r) => r.id === id);
+  if (idx === -1) return null;
+  receipts[idx] = { ...receipts[idx], ...data };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
+  return receipts[idx];
+}
+
 export function deleteReceipt(id: string): void {
   const receipts = getReceipts().filter((r) => r.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));

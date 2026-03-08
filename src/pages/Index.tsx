@@ -16,9 +16,9 @@ const Index = () => {
   const [tab, setTab] = useState("add");
   const [profile, setProfile] = useState<Profile>(getActiveProfile);
   const [duplicateData, setDuplicateData] = useState<ReceiptType | null>(null);
+  const [editData, setEditData] = useState<ReceiptType | null>(null);
   const [formKey, setFormKey] = useState(0);
 
-  // Handle OAuth callback on mount
   useEffect(() => {
     if (handleOAuthCallback()) {
       toast.success("เชื่อมต่อ Google Account สำเร็จ! ✅");
@@ -35,6 +35,14 @@ const Index = () => {
 
   const handleDuplicate = (receipt: ReceiptType) => {
     setDuplicateData(receipt);
+    setEditData(null);
+    setFormKey((k) => k + 1);
+    setTab("add");
+  };
+
+  const handleEdit = (receipt: ReceiptType) => {
+    setEditData(receipt);
+    setDuplicateData(null);
     setFormKey((k) => k + 1);
     setTab("add");
   };
@@ -43,7 +51,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="max-w-lg mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
@@ -52,7 +59,6 @@ const Index = () => {
               <h1 className="text-lg font-bold font-display">บันทึกใบเสร็จ</h1>
             </div>
           </div>
-          {/* Profile Switcher */}
           <div className="flex mt-2 rounded-lg overflow-hidden border border-border">
             <button
               onClick={() => handleProfileChange("personal")}
@@ -82,7 +88,7 @@ const Index = () => {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full">
             <TabsTrigger value="add" className="flex-1 gap-1.5">
-              <Receipt className="h-4 w-4" /> บันทึก
+              <Receipt className="h-4 w-4" /> {editData ? "แก้ไข" : "บันทึก"}
             </TabsTrigger>
             <TabsTrigger value="list" className="flex-1 gap-1.5">
               <ListChecks className="h-4 w-4" /> ประวัติ
@@ -98,12 +104,14 @@ const Index = () => {
             <ReceiptForm
               key={`${profile}-${formKey}`}
               profile={profile}
-              onSaved={() => { refresh(); setDuplicateData(null); setTab("list"); }}
+              onSaved={() => { refresh(); setDuplicateData(null); setEditData(null); setTab("list"); }}
               duplicateData={duplicateData}
+              editData={editData}
+              onCancelEdit={() => { setEditData(null); setFormKey((k) => k + 1); }}
             />
           </TabsContent>
           <TabsContent value="list" className="mt-4">
-            <ReceiptList receipts={receipts} profile={profile} onChanged={refresh} onDuplicate={handleDuplicate} />
+            <ReceiptList receipts={receipts} profile={profile} onChanged={refresh} onDuplicate={handleDuplicate} onEdit={handleEdit} />
           </TabsContent>
           <TabsContent value="summary" className="mt-4">
             <ExpenseSummary receipts={receipts} profile={profile} />
