@@ -221,6 +221,7 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     doc_number: data.doc_number || null,
     tax_id: data.tax_id || null,
     reference_id: data.reference_id || null,
+    bank: data.bank || null,
     items: Array.isArray(data.items)
       ? data.items.map((i: any) => ({
           name: i.name || "",
