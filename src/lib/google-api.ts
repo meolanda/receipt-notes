@@ -60,7 +60,7 @@ export function startGoogleOAuth(): void {
     throw new Error("กรุณากรอก Google OAuth Client ID ก่อน");
   }
 
-  const redirectUri = window.location.origin + window.location.pathname;
+  const redirectUri = window.location.origin;
   const params = new URLSearchParams({
     client_id: settings.clientId,
     redirect_uri: redirectUri,
