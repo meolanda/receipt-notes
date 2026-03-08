@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Camera, Plus, Trash2, Receipt } from "lucide-react";
 import { saveReceipt, CATEGORIES, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
+import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { toast } from "sonner";
 
 interface ReceiptFormProps {
