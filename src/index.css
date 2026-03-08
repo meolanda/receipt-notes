@@ -87,6 +87,20 @@
 
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ensure minimum touch target sizes on mobile */
+  @media (max-width: 640px) {
+    button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    input, textarea, select {
+      font-size: 16px !important; /* Prevent iOS zoom on focus */
+    }
   }
 }
 
@@ -102,5 +116,13 @@
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

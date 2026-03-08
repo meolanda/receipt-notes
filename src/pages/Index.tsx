@@ -51,7 +51,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border">
+      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border safe-top">
         <div className="max-w-lg mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -62,7 +62,7 @@ const Index = () => {
           <div className="flex mt-2 rounded-lg overflow-hidden border border-border">
             <button
               onClick={() => handleProfileChange("personal")}
-              className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 py-3 text-sm font-medium transition-colors active:opacity-80 ${
                 isPersonal
                   ? "bg-orange-500 text-white"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -72,7 +72,7 @@ const Index = () => {
             </button>
             <button
               onClick={() => handleProfileChange("company")}
-              className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 py-3 text-sm font-medium transition-colors active:opacity-80 ${
                 !isPersonal
                   ? "bg-blue-500 text-white"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -84,20 +84,24 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-5 pb-24 space-y-5">
+      <main className="max-w-lg mx-auto px-4 py-5 pb-24 space-y-5 safe-bottom">
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full">
-            <TabsTrigger value="add" className="flex-1 gap-1.5">
-              <Receipt className="h-4 w-4" /> {editData ? "แก้ไข" : "บันทึก"}
+          <TabsList className="w-full h-12">
+            <TabsTrigger value="add" className="flex-1 gap-1 sm:gap-1.5 text-xs sm:text-sm py-2.5">
+              <Receipt className="h-4 w-4 shrink-0" />
+              <span className="hidden xs:inline">{editData ? "แก้ไข" : "บันทึก"}</span>
             </TabsTrigger>
-            <TabsTrigger value="list" className="flex-1 gap-1.5">
-              <ListChecks className="h-4 w-4" /> ประวัติ
+            <TabsTrigger value="list" className="flex-1 gap-1 sm:gap-1.5 text-xs sm:text-sm py-2.5">
+              <ListChecks className="h-4 w-4 shrink-0" />
+              <span className="hidden xs:inline">ประวัติ</span>
             </TabsTrigger>
-            <TabsTrigger value="summary" className="flex-1 gap-1.5">
-              <BarChart3 className="h-4 w-4" /> สรุป
+            <TabsTrigger value="summary" className="flex-1 gap-1 sm:gap-1.5 text-xs sm:text-sm py-2.5">
+              <BarChart3 className="h-4 w-4 shrink-0" />
+              <span className="hidden xs:inline">สรุป</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="flex-1 gap-1.5">
-              <Settings className="h-4 w-4" /> ตั้งค่า
+            <TabsTrigger value="settings" className="flex-1 gap-1 sm:gap-1.5 text-xs sm:text-sm py-2.5">
+              <Settings className="h-4 w-4 shrink-0" />
+              <span className="hidden xs:inline">ตั้งค่า</span>
             </TabsTrigger>
           </TabsList>
           <TabsContent value="add" className="mt-4">

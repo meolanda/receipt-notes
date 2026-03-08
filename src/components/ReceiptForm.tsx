@@ -147,21 +147,23 @@ export default function ReceiptForm({ profile, onSaved, duplicateData, editData,
           {/* Items */}
           <div>
             <Label>รายการสินค้า/บริการ</Label>
-            <div className="mt-2 space-y-2">
+            <div className="mt-2 space-y-3">
               {form.items.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <Input placeholder="ชื่อรายการ" value={item.name} onChange={(e) => form.updateItem(idx, "name", e.target.value)} className={`flex-1 ${lowConfCls}`} />
-                  <Input type="number" min={1} value={item.quantity} onChange={(e) => form.updateItem(idx, "quantity", parseInt(e.target.value) || 1)} className={`w-16 text-center ${lowConfCls}`} />
-                  <Input type="number" min={0} step={0.01} placeholder="ราคา" value={item.price || ""} onChange={(e) => form.updateItem(idx, "price", parseFloat(e.target.value) || 0)} className={`w-24 ${lowConfCls}`} />
-                  {form.items.length > 1 && (
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" onClick={() => form.removeItem(idx)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                <div key={idx} className="space-y-1.5 p-3 rounded-lg bg-muted/50 border border-border/50 sm:p-0 sm:bg-transparent sm:border-0 sm:space-y-0 sm:flex sm:items-center sm:gap-2">
+                  <Input placeholder="ชื่อรายการ" value={item.name} onChange={(e) => form.updateItem(idx, "name", e.target.value)} className={`flex-1 h-11 ${lowConfCls}`} />
+                  <div className="flex items-center gap-2">
+                    <Input type="number" min={1} value={item.quantity} onChange={(e) => form.updateItem(idx, "quantity", parseInt(e.target.value) || 1)} className={`w-20 h-11 text-center ${lowConfCls}`} placeholder="จำนวน" />
+                    <Input type="number" min={0} step={0.01} placeholder="ราคา" value={item.price || ""} onChange={(e) => form.updateItem(idx, "price", parseFloat(e.target.value) || 0)} className={`flex-1 sm:w-28 h-11 ${lowConfCls}`} />
+                    {form.items.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0 text-muted-foreground" onClick={() => form.removeItem(idx)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
-            <Button type="button" variant="ghost" size="sm" className="mt-2 text-primary" onClick={form.addItem}>
+            <Button type="button" variant="ghost" size="sm" className="mt-2 text-primary h-11" onClick={form.addItem}>
               <Plus className="h-4 w-4 mr-1" /> เพิ่มรายการ
             </Button>
           </div>
