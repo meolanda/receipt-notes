@@ -235,7 +235,7 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
       project: project.trim(),
       reimbursementNote: reimbursementNote.trim(),
       imageData,
-      documentType: (scanDocType as DocumentType) || undefined,
+      documentType: (scanDocType as DocumentTypeValue) || undefined,
     });
     toast.success("บันทึกใบเสร็จเรียบร้อย!");
 
