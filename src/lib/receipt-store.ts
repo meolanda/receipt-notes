@@ -27,6 +27,57 @@ export interface Receipt {
 }
 
 const STORAGE_KEY = "receipt-tracker-data";
+const CUSTOM_CATEGORIES_KEY = "receipt-custom-categories";
+
+export const DEFAULT_PERSONAL_CATEGORIES = [
+  "อาหาร", "ช้อปปิ้ง", "ท่องเที่ยว", "สุขภาพ", "ค่าน้ำ/ไฟ", "ขนส่ง", "บันเทิง", "อื่นๆ",
+];
+
+export const DEFAULT_COMPANY_CATEGORIES = [
+  "อะไหล่", "น้ำยาแอร์", "ค่าเดินทาง", "เครื่องมือ", "ค่าแรง", "ค่าน้ำ/ไฟ", "อื่นๆ",
+];
+
+// Legacy combined list (kept for backward compat)
+export const CATEGORIES = [...new Set([...DEFAULT_COMPANY_CATEGORIES, ...DEFAULT_PERSONAL_CATEGORIES])];
+
+export function getCustomCategories(): { personal: string[]; company: string[] } {
+  try {
+    const data = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    if (data) return JSON.parse(data);
+  } catch {}
+  return { personal: [], company: [] };
+}
+
+export function saveCustomCategories(custom: { personal: string[]; company: string[] }): void {
+  localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(custom));
+}
+
+export function getCategoriesForProfile(profile: Profile): string[] {
+  const defaults = profile === "personal" ? DEFAULT_PERSONAL_CATEGORIES : DEFAULT_COMPANY_CATEGORIES;
+  const custom = getCustomCategories();
+  const customList = profile === "personal" ? custom.personal : custom.company;
+  return [...new Set([...defaults, ...customList])];
+}
+
+export function addCustomCategory(profile: Profile, category: string): void {
+  const custom = getCustomCategories();
+  const key = profile === "personal" ? "personal" : "company";
+  if (!custom[key].includes(category)) {
+    custom[key].push(category);
+    saveCustomCategories(custom);
+  }
+}
+
+export function removeCustomCategory(profile: Profile, category: string): void {
+  const custom = getCustomCategories();
+  const key = profile === "personal" ? "personal" : "company";
+  custom[key] = custom[key].filter((c) => c !== category);
+  saveCustomCategories(custom);
+}
+
+export function isCategoryUsed(category: string, profile: Profile): boolean {
+  return getReceipts().some((r) => r.profile === profile && r.category === category);
+}
 
 export function getReceipts(): Receipt[] {
   try {
@@ -96,17 +147,6 @@ export function downloadCSV(receipts: Receipt[], profileLabel?: string) {
   URL.revokeObjectURL(url);
 }
 
-export const CATEGORIES = [
-  "อะไหล่",
-  "น้ำยาแอร์",
-  "ค่าเดินทาง",
-  "เครื่องมือ",
-  "ค่าแรง",
-  "ค่าน้ำ/ไฟ",
-  "อาหาร",
-  "อื่นๆ",
-];
-
 export const TAGS: ReceiptTag[] = ["ส่วนตัว", "บริษัท", "เบิกได้", "เบิกแล้ว"];
 
 export const TAG_COLORS: Record<ReceiptTag, string> = {
@@ -124,6 +164,11 @@ export const CATEGORY_COLORS: Record<string, string> = {
   "ค่าแรง": "bg-purple-100 text-purple-700 border-purple-200",
   "ค่าน้ำ/ไฟ": "bg-yellow-100 text-yellow-700 border-yellow-200",
   "อาหาร": "bg-orange-100 text-orange-700 border-orange-200",
+  "ช้อปปิ้ง": "bg-pink-100 text-pink-700 border-pink-200",
+  "ท่องเที่ยว": "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "สุขภาพ": "bg-rose-100 text-rose-700 border-rose-200",
+  "ขนส่ง": "bg-indigo-100 text-indigo-700 border-indigo-200",
+  "บันเทิง": "bg-violet-100 text-violet-700 border-violet-200",
   "อื่นๆ": "bg-gray-100 text-gray-700 border-gray-200",
 };
 

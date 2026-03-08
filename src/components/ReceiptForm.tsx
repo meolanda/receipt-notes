@@ -6,9 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Plus, Trash2, Receipt } from "lucide-react";
-import { saveReceipt, CATEGORIES, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
+import { Badge } from "@/components/ui/badge";
+import { Camera, Plus, Trash2, Receipt, Bot, Loader2 } from "lucide-react";
+import { saveReceipt, getCategoriesForProfile, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
+import { scanReceipt, getClaudeSettings } from "@/lib/claude-api";
 import { toast } from "sonner";
 
 interface ReceiptFormProps {
@@ -30,8 +32,11 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
   const [project, setProject] = useState(duplicateData?.project || "");
   const [reimbursementNote, setReimbursementNote] = useState(duplicateData?.reimbursementNote || "");
   const [vatEnabled, setVatEnabled] = useState(duplicateData?.vatEnabled || false);
+  const [scanning, setScanning] = useState(false);
+  const [scanModel, setScanModel] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const categories = getCategoriesForProfile(profile);
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
   const vatAmount = vatEnabled ? totalAmount * 0.07 : 0;
   const grandTotal = totalAmount + vatAmount;
@@ -59,6 +64,62 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     const updated = [...items];
     updated[idx] = { ...updated[idx], [field]: value };
     setItems(updated);
+  };
+
+  const handleScan = async () => {
+    if (!imageData) {
+      toast.error("กรุณาอัปโหลดรูปใบเสร็จก่อน");
+      return;
+    }
+    const claudeSettings = getClaudeSettings();
+    if (!claudeSettings.apiKey) {
+      toast.error("กรุณากรอก Claude API Key ก่อน (ไปที่แท็บตั้งค่า)");
+      return;
+    }
+
+    setScanning(true);
+    setScanModel(null);
+    try {
+      const result = await scanReceipt(imageData);
+      
+      // Auto-fill form fields
+      if (result.store_name) setTitle(result.store_name);
+      if (result.date) setDate(result.date);
+      if (result.notes) setDescription(result.notes);
+      
+      // Match category to profile's list
+      if (result.category) {
+        const matched = categories.find((c) =>
+          c.toLowerCase().includes(result.category.toLowerCase()) ||
+          result.category.toLowerCase().includes(c.toLowerCase())
+        );
+        if (matched) setCategory(matched);
+      }
+
+      // Fill items
+      if (result.items.length > 0) {
+        setItems(
+          result.items.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: i.unit_price || (i.total / (i.quantity || 1)),
+          }))
+        );
+      }
+
+      // VAT
+      if (result.vat > 0) {
+        setVatEnabled(true);
+      }
+
+      setScanModel(result.modelUsed);
+      toast.success(`สแกนสำเร็จ ✅ (${result.modelUsed})`);
+    } catch (err: any) {
+      console.error("AI scan error:", err);
+      toast.error("สแกนไม่สำเร็จ: " + err.message);
+    } finally {
+      setScanning(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -109,6 +170,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     setProject("");
     setReimbursementNote("");
     setVatEnabled(false);
+    setScanModel(null);
     onSaved();
   };
 
@@ -118,6 +180,11 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
         <CardTitle className="flex items-center gap-2 text-lg">
           <Receipt className="h-5 w-5 text-primary" />
           บันทึกใบเสร็จใหม่
+          {scanModel && (
+            <Badge variant="outline" className="ml-auto text-xs bg-green-50 text-green-700 border-green-200">
+              {scanModel} ✓
+            </Badge>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -139,6 +206,23 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
                 <span className="text-sm text-muted-foreground">ถ่ายรูป / เลือกรูป</span>
               </Button>
             )}
+            {/* AI Scan Button */}
+            {imageData && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-2 w-full gap-2"
+                onClick={handleScan}
+                disabled={scanning}
+              >
+                {scanning ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Bot className="h-4 w-4" />
+                )}
+                {scanning ? "กำลังสแกน..." : "🤖 สแกนด้วย AI"}
+              </Button>
+            )}
           </div>
 
           {/* Basic info */}
@@ -158,7 +242,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
                   <SelectValue placeholder="เลือก..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>
