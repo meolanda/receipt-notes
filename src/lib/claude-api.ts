@@ -186,6 +186,9 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
   const haikuModel = "claude-haiku-4-5-20251001";
   const sonnetModel = "claude-sonnet-4-20250514";
 
+  // Complex document types that need Sonnet for accurate Thai text extraction
+  const complexTypes: DocumentType[] = ["quotation", "invoice", "tax_invoice"];
+
   let modelUsed: "Haiku" | "Sonnet";
   let data: any;
 
@@ -196,10 +199,12 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
   } else {
+    // Auto mode: first pass with Haiku to detect document type
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
 
-    if (isIncomplete(data)) {
+    // Re-scan with Sonnet if complex type or incomplete data
+    if (complexTypes.includes(data.document_type) || isIncomplete(data)) {
       data = await callClaude(settings.apiKey, sonnetModel, imageBase64);
       modelUsed = "Sonnet";
     }
