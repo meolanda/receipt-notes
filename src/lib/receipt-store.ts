@@ -7,6 +7,8 @@ export interface ReceiptItem {
   price: number;
 }
 
+export type DocumentTypeValue = "receipt" | "quotation" | "tax_invoice" | "invoice" | "bank_slip" | "market_bill" | "other";
+
 export interface Receipt {
   id: string;
   profile: Profile;
@@ -24,6 +26,7 @@ export interface Receipt {
   project: string;
   reimbursementNote: string;
   imageData?: string;
+  documentType?: DocumentTypeValue;
   createdAt: string;
 }
 
