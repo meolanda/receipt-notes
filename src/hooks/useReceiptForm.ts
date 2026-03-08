@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { getCategoriesForProfile, saveReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt } from "@/lib/receipt-store";
+import { getCategoriesForProfile, saveReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { scanReceipt, getClaudeSettings, type ScanResult, type DocumentType } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
