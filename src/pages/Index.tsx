@@ -7,6 +7,8 @@ import ReceiptForm from "@/components/ReceiptForm";
 import ReceiptList from "@/components/ReceiptList";
 import ExpenseSummary from "@/components/ExpenseSummary";
 import GoogleSettings from "@/components/GoogleSettings";
+import ClaudeSettings from "@/components/ClaudeSettings";
+import CategoryManager from "@/components/CategoryManager";
 import { toast } from "sonner";
 
 const Index = () => {
@@ -106,7 +108,9 @@ const Index = () => {
           <TabsContent value="summary" className="mt-4">
             <ExpenseSummary receipts={receipts} profile={profile} />
           </TabsContent>
-          <TabsContent value="settings" className="mt-4">
+          <TabsContent value="settings" className="mt-4 space-y-5">
+            <ClaudeSettings />
+            <CategoryManager />
             <GoogleSettings />
           </TabsContent>
         </Tabs>
