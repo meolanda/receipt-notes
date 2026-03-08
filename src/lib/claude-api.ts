@@ -7,7 +7,8 @@ export interface ClaudeSettings {
   modelPreference: ClaudeModel;
 }
 
-export interface ScanResult {
+export interface ReceiptScanResult {
+  type: "receipt";
   store_name: string;
   date: string;
   category: string;
@@ -18,6 +19,20 @@ export interface ScanResult {
   notes: string;
   modelUsed: "Haiku" | "Sonnet";
 }
+
+export interface BankSlipScanResult {
+  type: "bank_slip";
+  bank: string;
+  date: string;
+  time: string;
+  recipient_name: string;
+  amount: number;
+  reference_id: string;
+  notes: string;
+  modelUsed: "Haiku" | "Sonnet";
+}
+
+export type ScanResult = ReceiptScanResult | BankSlipScanResult;
 
 export function getClaudeSettings(): ClaudeSettings {
   try {
