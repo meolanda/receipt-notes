@@ -11,6 +11,7 @@ export interface Receipt {
   id: string;
   profile: Profile;
   title: string;
+  storeName: string;
   description: string;
   category: string;
   tag: ReceiptTag;
@@ -111,7 +112,7 @@ export function deleteReceipt(id: string): void {
 
 export function exportToCSV(receipts: Receipt[]): string {
   const headers = [
-    "วันที่", "หัวข้อ", "รายละเอียด", "หมวดหมู่", "แท็ก", "โปรไฟล์",
+    "วันที่", "หัวข้อ", "ร้านค้า/ผู้รับเงิน", "รายละเอียด", "หมวดหมู่", "แท็ก", "โปรไฟล์",
     "โครงการ/ลูกค้า", "รายการสินค้า", "ยอดรวม (บาท)", "VAT 7%", "ยอดรวมสุทธิ",
     "หมายเหตุการเบิก"
   ];
@@ -120,6 +121,7 @@ export function exportToCSV(receipts: Receipt[]): string {
     return [
       r.date,
       `"${r.title}"`,
+      `"${r.storeName || ""}"`,
       `"${r.description}"`,
       r.category,
       r.tag,
