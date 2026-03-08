@@ -7,7 +7,8 @@ export interface ClaudeSettings {
   modelPreference: ClaudeModel;
 }
 
-export interface ScanResult {
+export interface ReceiptScanResult {
+  type: "receipt";
   store_name: string;
   date: string;
   category: string;
@@ -18,6 +19,20 @@ export interface ScanResult {
   notes: string;
   modelUsed: "Haiku" | "Sonnet";
 }
+
+export interface BankSlipScanResult {
+  type: "bank_slip";
+  bank: string;
+  date: string;
+  time: string;
+  recipient_name: string;
+  amount: number;
+  reference_id: string;
+  notes: string;
+  modelUsed: "Haiku" | "Sonnet";
+}
+
+export type ScanResult = ReceiptScanResult | BankSlipScanResult;
 
 export function getClaudeSettings(): ClaudeSettings {
   try {
@@ -32,8 +47,11 @@ export function saveClaudeSettings(settings: ClaudeSettings): void {
   localStorage.setItem(CLAUDE_SETTINGS_KEY, JSON.stringify(settings));
 }
 
-const PROMPT = `อ่านใบเสร็จ/ใบเสนอราคานี้และดึงข้อมูลออกมาในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+const PROMPT = `อ่านรูปนี้และระบุว่าเป็น "ใบเสร็จ/ใบเสนอราคา" หรือ "สลิปโอนเงิน" แล้วดึงข้อมูลออกมาในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+
+ถ้าเป็นใบเสร็จ/ใบเสนอราคา:
 {
+  "type": "receipt",
   "store_name": "string",
   "date": "string (YYYY-MM-DD)",
   "category": "string",
@@ -41,6 +59,18 @@ const PROMPT = `อ่านใบเสร็จ/ใบเสนอราคา
   "subtotal": "number",
   "vat": "number",
   "total": "number",
+  "notes": "string"
+}
+
+ถ้าเป็นสลิปโอนเงิน/สลิปธนาคาร:
+{
+  "type": "bank_slip",
+  "bank": "string (ชื่อธนาคาร)",
+  "date": "string (YYYY-MM-DD)",
+  "time": "string (HH:mm)",
+  "recipient_name": "string",
+  "amount": "number",
+  "reference_id": "string",
   "notes": "string"
 }`;
 
@@ -98,6 +128,9 @@ async function callClaude(
 }
 
 function isIncomplete(data: any): boolean {
+  if (data.type === "bank_slip") {
+    return !data.recipient_name || !data.date || (!data.amount && data.amount !== 0);
+  }
   return !data.store_name || !data.date || (!data.total && data.total !== 0);
 }
 
@@ -118,7 +151,6 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
   } else {
-    // Auto hybrid: try Haiku first, fallback to Sonnet
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
 
@@ -128,7 +160,22 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     }
   }
 
+  if (data.type === "bank_slip") {
+    return {
+      type: "bank_slip",
+      bank: data.bank || "",
+      date: data.date || "",
+      time: data.time || "",
+      recipient_name: data.recipient_name || "",
+      amount: Number(data.amount) || 0,
+      reference_id: data.reference_id || "",
+      notes: data.notes || "",
+      modelUsed,
+    };
+  }
+
   return {
+    type: "receipt",
     store_name: data.store_name || "",
     date: data.date || "",
     category: data.category || "",
