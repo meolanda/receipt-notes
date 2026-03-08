@@ -47,8 +47,11 @@ export function saveClaudeSettings(settings: ClaudeSettings): void {
   localStorage.setItem(CLAUDE_SETTINGS_KEY, JSON.stringify(settings));
 }
 
-const PROMPT = `อ่านใบเสร็จ/ใบเสนอราคานี้และดึงข้อมูลออกมาในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+const PROMPT = `อ่านรูปนี้และระบุว่าเป็น "ใบเสร็จ/ใบเสนอราคา" หรือ "สลิปโอนเงิน" แล้วดึงข้อมูลออกมาในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+
+ถ้าเป็นใบเสร็จ/ใบเสนอราคา:
 {
+  "type": "receipt",
   "store_name": "string",
   "date": "string (YYYY-MM-DD)",
   "category": "string",
@@ -56,6 +59,18 @@ const PROMPT = `อ่านใบเสร็จ/ใบเสนอราคา
   "subtotal": "number",
   "vat": "number",
   "total": "number",
+  "notes": "string"
+}
+
+ถ้าเป็นสลิปโอนเงิน/สลิปธนาคาร:
+{
+  "type": "bank_slip",
+  "bank": "string (ชื่อธนาคาร)",
+  "date": "string (YYYY-MM-DD)",
+  "time": "string (HH:mm)",
+  "recipient_name": "string",
+  "amount": "number",
+  "reference_id": "string",
   "notes": "string"
 }`;
 
