@@ -130,6 +130,9 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate 
         </Select>
       </div>
 
+      {/* Sync to Google */}
+      <SyncButton receipts={filtered} />
+
       {/* List */}
       {filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
