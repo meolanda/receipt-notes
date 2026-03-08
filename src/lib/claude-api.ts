@@ -128,6 +128,9 @@ async function callClaude(
 }
 
 function isIncomplete(data: any): boolean {
+  if (data.type === "bank_slip") {
+    return !data.recipient_name || !data.date || (!data.amount && data.amount !== 0);
+  }
   return !data.store_name || !data.date || (!data.total && data.total !== 0);
 }
 
@@ -148,7 +151,6 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
   } else {
-    // Auto hybrid: try Haiku first, fallback to Sonnet
     data = await callClaude(settings.apiKey, haikuModel, imageBase64);
     modelUsed = "Haiku";
 
@@ -158,7 +160,22 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     }
   }
 
+  if (data.type === "bank_slip") {
+    return {
+      type: "bank_slip",
+      bank: data.bank || "",
+      date: data.date || "",
+      time: data.time || "",
+      recipient_name: data.recipient_name || "",
+      amount: Number(data.amount) || 0,
+      reference_id: data.reference_id || "",
+      notes: data.notes || "",
+      modelUsed,
+    };
+  }
+
   return {
+    type: "receipt",
     store_name: data.store_name || "",
     date: data.date || "",
     category: data.category || "",

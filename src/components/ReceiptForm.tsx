@@ -82,38 +82,46 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     try {
       const result = await scanReceipt(imageData);
       
-      // Auto-fill form fields
-      if (result.store_name) setTitle(result.store_name);
-      if (result.date) setDate(result.date);
-      if (result.notes) setDescription(result.notes);
-      
-      // Match category to profile's list
-      if (result.category) {
-        const matched = categories.find((c) =>
-          c.toLowerCase().includes(result.category.toLowerCase()) ||
-          result.category.toLowerCase().includes(c.toLowerCase())
-        );
-        if (matched) setCategory(matched);
-      }
+      if (result.type === "bank_slip") {
+        // Bank slip auto-fill
+        setTitle(`โอนเงิน - ${result.recipient_name}`);
+        if (result.date) setDate(result.date);
+        setCategory("อื่นๆ");
+        setDescription(`Ref: ${result.reference_id}${result.bank ? ` | ${result.bank}` : ''}${result.time ? ` | ${result.time}` : ''}`);
+        setItems([{ name: `โอนเงินให้ ${result.recipient_name}`, quantity: 1, price: result.amount }]);
+        if (result.notes) setDescription(prev => prev + `\n${result.notes}`);
+      } else {
+        // Receipt auto-fill
+        if (result.store_name) setTitle(result.store_name);
+        if (result.date) setDate(result.date);
+        if (result.notes) setDescription(result.notes);
+        
+        if (result.category) {
+          const matched = categories.find((c) =>
+            c.toLowerCase().includes(result.category.toLowerCase()) ||
+            result.category.toLowerCase().includes(c.toLowerCase())
+          );
+          if (matched) setCategory(matched);
+        }
 
-      // Fill items
-      if (result.items.length > 0) {
-        setItems(
-          result.items.map((i) => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: i.unit_price || (i.total / (i.quantity || 1)),
-          }))
-        );
-      }
+        if (result.items.length > 0) {
+          setItems(
+            result.items.map((i) => ({
+              name: i.name,
+              quantity: i.quantity,
+              price: i.unit_price || (i.total / (i.quantity || 1)),
+            }))
+          );
+        }
 
-      // VAT
-      if (result.vat > 0) {
-        setVatEnabled(true);
+        if (result.vat > 0) {
+          setVatEnabled(true);
+        }
       }
 
       setScanModel(result.modelUsed);
-      toast.success(`สแกนสำเร็จ ✅ (${result.modelUsed})`);
+      const typeLabel = result.type === "bank_slip" ? "สลิปโอนเงิน" : "ใบเสร็จ";
+      toast.success(`สแกน${typeLabel}สำเร็จ ✅ (${result.modelUsed})`);
     } catch (err: any) {
       console.error("AI scan error:", err);
       toast.error("สแกนไม่สำเร็จ: " + err.message);
