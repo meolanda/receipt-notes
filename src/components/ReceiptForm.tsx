@@ -71,7 +71,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
       toast.error("กรุณาเลือกหมวดหมู่");
       return;
     }
-    saveReceipt({
+    const newReceipt = saveReceipt({
       profile,
       title: title.trim(),
       description: description.trim(),
