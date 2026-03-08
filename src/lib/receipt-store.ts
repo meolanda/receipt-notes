@@ -121,6 +121,7 @@ export function exportToCSV(receipts: Receipt[]): string {
     return [
       r.date,
       `"${r.title}"`,
+      `"${r.storeName || ""}"`,
       `"${r.description}"`,
       r.category,
       r.tag,
