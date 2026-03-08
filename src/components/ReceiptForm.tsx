@@ -21,6 +21,7 @@ interface ReceiptFormProps {
 
 export default function ReceiptForm({ profile, onSaved, duplicateData }: ReceiptFormProps) {
   const [title, setTitle] = useState(duplicateData?.title || "");
+  const [storeName, setStoreName] = useState(duplicateData?.storeName || "");
   const [description, setDescription] = useState(duplicateData?.description || "");
   const [category, setCategory] = useState(duplicateData?.category || "");
   const [tag, setTag] = useState<ReceiptTag>(duplicateData?.tag || "ส่วนตัว");
@@ -35,6 +36,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
   const [scanning, setScanning] = useState(false);
   const [scanModel, setScanModel] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   const categories = getCategoriesForProfile(profile);
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
@@ -82,17 +84,18 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     try {
       const result = await scanReceipt(imageData);
       
+      // DO NOT auto-fill title — user must name it themselves
+      setTitle("");
+
       if (result.type === "bank_slip") {
-        // Bank slip auto-fill
-        setTitle(`โอนเงิน - ${result.recipient_name}`);
+        setStoreName(result.recipient_name);
         if (result.date) setDate(result.date);
         setCategory("อื่นๆ");
         setDescription(`Ref: ${result.reference_id}${result.bank ? ` | ${result.bank}` : ''}${result.time ? ` | ${result.time}` : ''}`);
         setItems([{ name: `โอนเงินให้ ${result.recipient_name}`, quantity: 1, price: result.amount }]);
         if (result.notes) setDescription(prev => prev + `\n${result.notes}`);
       } else {
-        // Receipt auto-fill
-        if (result.store_name) setTitle(result.store_name);
+        setStoreName(result.store_name);
         if (result.date) setDate(result.date);
         if (result.notes) setDescription(result.notes);
         
@@ -121,7 +124,10 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
 
       setScanModel(result.modelUsed);
       const typeLabel = result.type === "bank_slip" ? "สลิปโอนเงิน" : "ใบเสร็จ";
-      toast.success(`สแกน${typeLabel}สำเร็จ ✅ (${result.modelUsed})`);
+      toast.success(`สแกน${typeLabel}สำเร็จ ✅ กรุณาตั้งชื่อรายการก่อนบันทึก`);
+      
+      // Auto-focus title field
+      setTimeout(() => titleRef.current?.focus(), 100);
     } catch (err: any) {
       console.error("AI scan error:", err);
       toast.error("สแกนไม่สำเร็จ: " + err.message);
@@ -133,7 +139,8 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      toast.error("กรุณากรอกชื่อใบเสร็จ");
+      toast.error("กรุณากรอกชื่อรายการ");
+      titleRef.current?.focus();
       return;
     }
     if (!category) {
@@ -143,6 +150,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     const newReceipt = saveReceipt({
       profile,
       title: title.trim(),
+      storeName: storeName.trim(),
       description: description.trim(),
       category,
       tag,
@@ -158,7 +166,6 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     });
     toast.success("บันทึกใบเสร็จเรียบร้อย!");
 
-    // Auto-sync to Google if connected
     if (isGoogleConnected()) {
       syncReceiptToGoogle(newReceipt).then(() => {
         toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
@@ -169,6 +176,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     }
 
     setTitle("");
+    setStoreName("");
     setDescription("");
     setCategory("");
     setTag("ส่วนตัว");
@@ -214,7 +222,6 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
                 <span className="text-sm text-muted-foreground">ถ่ายรูป / เลือกรูป</span>
               </Button>
             )}
-            {/* AI Scan Button */}
             {imageData && (
               <Button
                 type="button"
@@ -223,38 +230,53 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
                 onClick={handleScan}
                 disabled={scanning}
               >
-                {scanning ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Bot className="h-4 w-4" />
-                )}
+                {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
                 {scanning ? "กำลังสแกน..." : "🤖 สแกนด้วย AI"}
               </Button>
             )}
           </div>
 
           {/* Basic info */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <Label htmlFor="title">ชื่อใบเสร็จ *</Label>
-              <Input id="title" placeholder="เช่น ค่าอะไหล่แอร์" value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1" />
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="title">ชื่อรายการ *</Label>
+              <Input
+                ref={titleRef}
+                id="title"
+                placeholder="เช่น ซื้ออะไหล่แอร์, ค่าอาหารกลางวัน"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="mt-1"
+              />
             </div>
             <div>
-              <Label htmlFor="date">วันที่</Label>
-              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1" />
+              <Label htmlFor="storeName">ร้านค้า/ผู้รับเงิน</Label>
+              <Input
+                id="storeName"
+                placeholder="เช่น โฮมโปร, 7-Eleven"
+                value={storeName}
+                onChange={(e) => setStoreName(e.target.value)}
+                className="mt-1"
+              />
             </div>
-            <div>
-              <Label htmlFor="category">หมวดหมู่ *</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="เลือก..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="date">วันที่ *</Label>
+                <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label htmlFor="category">หมวดหมู่ *</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="เลือก..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -273,14 +295,16 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
             </Select>
           </div>
 
-          {/* Project / Customer */}
-          <div>
-            <Label htmlFor="project">โครงการ/ลูกค้า</Label>
-            <Input id="project" placeholder="เช่น คอนโด ABC" value={project} onChange={(e) => setProject(e.target.value)} className="mt-1" />
-          </div>
+          {/* Profile-specific fields */}
+          {profile === "company" && (
+            <div>
+              <Label htmlFor="project">โครงการ/ลูกค้า</Label>
+              <Input id="project" placeholder="เช่น คอนโด ABC" value={project} onChange={(e) => setProject(e.target.value)} className="mt-1" />
+            </div>
+          )}
 
           <div>
-            <Label htmlFor="desc">รายละเอียด</Label>
+            <Label htmlFor="desc">หมายเหตุ</Label>
             <Textarea id="desc" placeholder="รายละเอียดเพิ่มเติม..." value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1" rows={2} />
           </div>
 
@@ -332,11 +356,13 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
             </div>
           </div>
 
-          {/* Reimbursement note */}
-          <div>
-            <Label htmlFor="reimburse">หมายเหตุการเบิก</Label>
-            <Input id="reimburse" placeholder="เช่น เบิกจากโครงการ X" value={reimbursementNote} onChange={(e) => setReimbursementNote(e.target.value)} className="mt-1" />
-          </div>
+          {/* Reimbursement note - company only */}
+          {profile === "company" && (
+            <div>
+              <Label htmlFor="reimburse">หมายเหตุการเบิก</Label>
+              <Input id="reimburse" placeholder="เช่น เบิกจากโครงการ X" value={reimbursementNote} onChange={(e) => setReimbursementNote(e.target.value)} className="mt-1" />
+            </div>
+          )}
 
           <Button type="submit" className="w-full" size="lg">
             บันทึกใบเสร็จ
