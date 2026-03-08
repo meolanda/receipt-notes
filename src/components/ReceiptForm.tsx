@@ -5,24 +5,43 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Camera, Plus, Trash2, Receipt } from "lucide-react";
-import { saveReceipt, CATEGORIES, type ReceiptItem } from "@/lib/receipt-store";
+import { saveReceipt, CATEGORIES, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 interface ReceiptFormProps {
+  profile: Profile;
   onSaved: () => void;
+  duplicateData?: ReceiptType | null;
+  onDuplicateHandled?: () => void;
 }
 
-export default function ReceiptForm({ onSaved }: ReceiptFormProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
+export default function ReceiptForm({ profile, onSaved, duplicateData, onDuplicateHandled }: ReceiptFormProps) {
+  const [title, setTitle] = useState(duplicateData?.title || "");
+  const [description, setDescription] = useState(duplicateData?.description || "");
+  const [category, setCategory] = useState(duplicateData?.category || "");
+  const [tag, setTag] = useState<ReceiptTag>(duplicateData?.tag || "ส่วนตัว");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [items, setItems] = useState<ReceiptItem[]>([{ name: "", quantity: 1, price: 0 }]);
-  const [imageData, setImageData] = useState<string | undefined>();
+  const [items, setItems] = useState<ReceiptItem[]>(
+    duplicateData?.items.length ? [...duplicateData.items] : [{ name: "", quantity: 1, price: 0 }]
+  );
+  const [imageData, setImageData] = useState<string | undefined>(duplicateData?.imageData);
+  const [project, setProject] = useState(duplicateData?.project || "");
+  const [reimbursementNote, setReimbursementNote] = useState(duplicateData?.reimbursementNote || "");
+  const [vatEnabled, setVatEnabled] = useState(duplicateData?.vatEnabled || false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Clear duplicate flag after mount
+  useState(() => {
+    if (duplicateData && onDuplicateHandled) {
+      onDuplicateHandled();
+    }
+  });
+
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
+  const vatAmount = vatEnabled ? totalAmount * 0.07 : 0;
+  const grandTotal = totalAmount + vatAmount;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,22 +79,32 @@ export default function ReceiptForm({ onSaved }: ReceiptFormProps) {
       return;
     }
     saveReceipt({
+      profile,
       title: title.trim(),
       description: description.trim(),
       category,
+      tag,
       date,
       totalAmount,
+      vatEnabled,
+      vatAmount,
+      grandTotal,
       items: items.filter((i) => i.name.trim()),
+      project: project.trim(),
+      reimbursementNote: reimbursementNote.trim(),
       imageData,
     });
     toast.success("บันทึกใบเสร็จเรียบร้อย!");
-    // Reset
     setTitle("");
     setDescription("");
     setCategory("");
+    setTag("ส่วนตัว");
     setDate(new Date().toISOString().slice(0, 10));
     setItems([{ name: "", quantity: 1, price: 0 }]);
     setImageData(undefined);
+    setProject("");
+    setReimbursementNote("");
+    setVatEnabled(false);
     onSaved();
   };
 
@@ -112,7 +141,7 @@ export default function ReceiptForm({ onSaved }: ReceiptFormProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label htmlFor="title">ชื่อใบเสร็จ *</Label>
-              <Input id="title" placeholder="เช่น ค่าอาหารกลางวัน" value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1" />
+              <Input id="title" placeholder="เช่น ค่าอะไหล่แอร์" value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1" />
             </div>
             <div>
               <Label htmlFor="date">วันที่</Label>
@@ -131,6 +160,27 @@ export default function ReceiptForm({ onSaved }: ReceiptFormProps) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Tag */}
+          <div>
+            <Label htmlFor="tag">แท็ก</Label>
+            <Select value={tag} onValueChange={(v) => setTag(v as ReceiptTag)}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TAGS.map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Project / Customer */}
+          <div>
+            <Label htmlFor="project">โครงการ/ลูกค้า</Label>
+            <Input id="project" placeholder="เช่น คอนโด ABC" value={project} onChange={(e) => setProject(e.target.value)} className="mt-1" />
           </div>
 
           <div>
@@ -160,12 +210,36 @@ export default function ReceiptForm({ onSaved }: ReceiptFormProps) {
             </Button>
           </div>
 
+          {/* VAT Toggle */}
+          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted">
+            <Label htmlFor="vat" className="cursor-pointer">คิด VAT 7%</Label>
+            <Switch id="vat" checked={vatEnabled} onCheckedChange={setVatEnabled} />
+          </div>
+
           {/* Total */}
-          <div className="flex items-center justify-between pt-3 border-t border-border">
-            <span className="font-medium text-muted-foreground">ยอดรวม</span>
-            <span className="text-2xl font-bold font-display text-primary">
-              ฿{totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-            </span>
+          <div className="space-y-1 pt-3 border-t border-border">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">ยอดรวม</span>
+              <span className="font-medium">฿{totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+            {vatEnabled && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">VAT 7%</span>
+                <span className="font-medium text-accent">฿{vatAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-1">
+              <span className="font-medium text-muted-foreground">ยอดรวมสุทธิ</span>
+              <span className="text-2xl font-bold font-display text-primary">
+                ฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          {/* Reimbursement note */}
+          <div>
+            <Label htmlFor="reimburse">หมายเหตุการเบิก</Label>
+            <Input id="reimburse" placeholder="เช่น เบิกจากโครงการ X" value={reimbursementNote} onChange={(e) => setReimbursementNote(e.target.value)} className="mt-1" />
           </div>
 
           <Button type="submit" className="w-full" size="lg">
