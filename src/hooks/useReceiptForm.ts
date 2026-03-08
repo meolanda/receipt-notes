@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { getCategoriesForProfile, saveReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
+import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
@@ -21,26 +21,28 @@ export interface UseReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
   duplicateData?: Receipt | null;
+  editData?: Receipt | null;
 }
 
-export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFormProps) {
-  const [title, setTitle] = useState(duplicateData?.title || "");
-  const [storeName, setStoreName] = useState(duplicateData?.storeName || "");
-  const [description, setDescription] = useState(duplicateData?.description || "");
-  const [category, setCategory] = useState(duplicateData?.category || "");
-  const [tag, setTag] = useState<ReceiptTag>(duplicateData?.tag || "ส่วนตัว");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+export function useReceiptForm({ profile, onSaved, duplicateData, editData }: UseReceiptFormProps) {
+  const prefill = editData || duplicateData;
+  const [title, setTitle] = useState(prefill?.title || "");
+  const [storeName, setStoreName] = useState(prefill?.storeName || "");
+  const [description, setDescription] = useState(prefill?.description || "");
+  const [category, setCategory] = useState(prefill?.category || "");
+  const [tag, setTag] = useState<ReceiptTag>(prefill?.tag || "ส่วนตัว");
+  const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<ReceiptItem[]>(
-    duplicateData?.items.length ? [...duplicateData.items] : [{ name: "", quantity: 1, price: 0 }]
+    prefill?.items.length ? [...prefill.items] : [{ name: "", quantity: 1, price: 0 }]
   );
-  const [imageData, setImageData] = useState<string | undefined>(duplicateData?.imageData);
-  const [project, setProject] = useState(duplicateData?.project || "");
-  const [reimbursementNote, setReimbursementNote] = useState(duplicateData?.reimbursementNote || "");
-  const [vatEnabled, setVatEnabled] = useState(duplicateData?.vatEnabled || false);
+  const [imageData, setImageData] = useState<string | undefined>(prefill?.imageData);
+  const [project, setProject] = useState(prefill?.project || "");
+  const [reimbursementNote, setReimbursementNote] = useState(prefill?.reimbursementNote || "");
+  const [vatEnabled, setVatEnabled] = useState(prefill?.vatEnabled || false);
   const [scanning, setScanning] = useState(false);
   const [scanModel, setScanModel] = useState<string | null>(null);
   const [scanConfidence, setScanConfidence] = useState<string | null>(null);
-  const [scanDocType, setScanDocType] = useState<string | null>(null);
+  const [scanDocType, setScanDocType] = useState<string | null>(editData?.documentType || null);
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -68,7 +70,7 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
         }
         setImageData(compressed);
       } catch {
-        setImageData(raw); // fallback to original
+        setImageData(raw);
       }
     };
     reader.readAsDataURL(file);
@@ -219,7 +221,8 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
       toast.error("กรุณาเลือกหมวดหมู่");
       return;
     }
-    const newReceipt = saveReceipt({
+
+    const receiptData = {
       profile,
       title: title.trim(),
       storeName: storeName.trim(),
@@ -236,16 +239,25 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
       reimbursementNote: reimbursementNote.trim(),
       imageData,
       documentType: (scanDocType as DocumentTypeValue) || undefined,
-    });
-    toast.success("บันทึกใบเสร็จเรียบร้อย!");
+    };
 
-    if (isGoogleConnected()) {
-      syncReceiptToGoogle(newReceipt).then(() => {
-        toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
-      }).catch((err) => {
-        console.error("Google sync error:", err);
-        toast.error("Sync ไปยัง Google ไม่สำเร็จ: " + err.message);
-      });
+    if (editData) {
+      // Update existing receipt
+      updateReceipt(editData.id, receiptData);
+      toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
+    } else {
+      // Save new receipt
+      const newReceipt = saveReceipt(receiptData);
+      toast.success("บันทึกใบเสร็จเรียบร้อย!");
+
+      if (isGoogleConnected()) {
+        syncReceiptToGoogle(newReceipt).then(() => {
+          toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
+        }).catch((err) => {
+          console.error("Google sync error:", err);
+          toast.error("Sync ไปยัง Google ไม่สำเร็จ: " + err.message);
+        });
+      }
     }
 
     // Reset form
@@ -264,10 +276,9 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
     setScanConfidence(null);
     setScanDocType(null);
     onSaved();
-  }, [title, storeName, description, category, tag, date, totalAmount, vatEnabled, vatAmount, grandTotal, items, project, reimbursementNote, imageData, scanDocType, profile, onSaved]);
+  }, [title, storeName, description, category, tag, date, totalAmount, vatEnabled, vatAmount, grandTotal, items, project, reimbursementNote, imageData, scanDocType, profile, onSaved, editData]);
 
   return {
-    // State
     title, setTitle,
     storeName, setStoreName,
     description, setDescription,
@@ -283,11 +294,8 @@ export function useReceiptForm({ profile, onSaved, duplicateData }: UseReceiptFo
     scanModel,
     scanConfidence,
     scanDocType,
-    // Refs
     fileRef, titleRef,
-    // Computed
     categories, totalAmount, vatAmount, grandTotal, isLowConfidence,
-    // Actions
     handleImageUpload, addItem, removeItem, updateItem, handleScan, handleSubmit,
   };
 }

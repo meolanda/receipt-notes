@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Plus, Trash2, Receipt, Bot, Loader2 } from "lucide-react";
+import { Camera, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil } from "lucide-react";
 import { TAGS, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 
@@ -14,19 +14,27 @@ interface ReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
   duplicateData?: ReceiptType | null;
+  editData?: ReceiptType | null;
+  onCancelEdit?: () => void;
 }
 
-export default function ReceiptForm({ profile, onSaved, duplicateData }: ReceiptFormProps) {
-  const form = useReceiptForm({ profile, onSaved, duplicateData });
+export default function ReceiptForm({ profile, onSaved, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
+  const form = useReceiptForm({ profile, onSaved, duplicateData, editData });
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
+  const isEditing = !!editData;
 
   return (
     <Card className="receipt-shadow fade-in">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Receipt className="h-5 w-5 text-primary" />
-          บันทึกใบเสร็จใหม่
+          {isEditing ? <Pencil className="h-5 w-5 text-primary" /> : <Receipt className="h-5 w-5 text-primary" />}
+          {isEditing ? "แก้ไขใบเสร็จ" : "บันทึกใบเสร็จใหม่"}
           <div className="ml-auto flex items-center gap-1.5">
+            {isEditing && onCancelEdit && (
+              <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit} className="text-muted-foreground">
+                <X className="h-4 w-4 mr-1" /> ยกเลิก
+              </Button>
+            )}
             {form.scanDocType && (
               <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                 {DOC_TYPE_LABELS[form.scanDocType] || form.scanDocType}
@@ -193,7 +201,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
           )}
 
           <Button type="submit" className="w-full" size="lg">
-            บันทึกใบเสร็จ
+            {isEditing ? "💾 บันทึกการแก้ไข" : "บันทึกใบเสร็จ"}
           </Button>
         </form>
       </CardContent>
