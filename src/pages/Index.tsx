@@ -80,11 +80,10 @@ const Index = () => {
           </TabsList>
           <TabsContent value="add" className="mt-4">
             <ReceiptForm
-              key={duplicateData?.id || profile}
+              key={`${profile}-${formKey}`}
               profile={profile}
-              onSaved={() => { refresh(); setTab("list"); }}
+              onSaved={() => { refresh(); setDuplicateData(null); setTab("list"); }}
               duplicateData={duplicateData}
-              onDuplicateHandled={() => setDuplicateData(null)}
             />
           </TabsContent>
           <TabsContent value="list" className="mt-4">
