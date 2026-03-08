@@ -11,6 +11,7 @@ export interface Receipt {
   id: string;
   profile: Profile;
   title: string;
+  storeName: string;
   description: string;
   category: string;
   tag: ReceiptTag;
