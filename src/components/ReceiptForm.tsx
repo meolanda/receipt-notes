@@ -14,10 +14,9 @@ interface ReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
   duplicateData?: ReceiptType | null;
-  onDuplicateHandled?: () => void;
 }
 
-export default function ReceiptForm({ profile, onSaved, duplicateData, onDuplicateHandled }: ReceiptFormProps) {
+export default function ReceiptForm({ profile, onSaved, duplicateData }: ReceiptFormProps) {
   const [title, setTitle] = useState(duplicateData?.title || "");
   const [description, setDescription] = useState(duplicateData?.description || "");
   const [category, setCategory] = useState(duplicateData?.category || "");
@@ -31,13 +30,6 @@ export default function ReceiptForm({ profile, onSaved, duplicateData, onDuplica
   const [reimbursementNote, setReimbursementNote] = useState(duplicateData?.reimbursementNote || "");
   const [vatEnabled, setVatEnabled] = useState(duplicateData?.vatEnabled || false);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  // Clear duplicate flag after mount
-  useState(() => {
-    if (duplicateData && onDuplicateHandled) {
-      onDuplicateHandled();
-    }
-  });
 
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
   const vatAmount = vatEnabled ? totalAmount * 0.07 : 0;

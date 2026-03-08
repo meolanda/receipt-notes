@@ -11,6 +11,7 @@ const Index = () => {
   const [tab, setTab] = useState("add");
   const [profile, setProfile] = useState<Profile>(getActiveProfile);
   const [duplicateData, setDuplicateData] = useState<ReceiptType | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
@@ -21,6 +22,7 @@ const Index = () => {
 
   const handleDuplicate = (receipt: ReceiptType) => {
     setDuplicateData(receipt);
+    setFormKey((k) => k + 1);
     setTab("add");
   };
 
@@ -78,11 +80,10 @@ const Index = () => {
           </TabsList>
           <TabsContent value="add" className="mt-4">
             <ReceiptForm
-              key={duplicateData?.id || profile}
+              key={`${profile}-${formKey}`}
               profile={profile}
-              onSaved={() => { refresh(); setTab("list"); }}
+              onSaved={() => { refresh(); setDuplicateData(null); setTab("list"); }}
               duplicateData={duplicateData}
-              onDuplicateHandled={() => setDuplicateData(null)}
             />
           </TabsContent>
           <TabsContent value="list" className="mt-4">
