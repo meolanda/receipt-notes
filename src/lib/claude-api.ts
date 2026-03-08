@@ -105,7 +105,7 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
   const settings = getClaudeSettings();
   if (!settings.apiKey) throw new Error("กรุณากรอก Claude API Key ก่อน (ไปที่แท็บตั้งค่า)");
 
-  const haikuModel = "claude-haiku-4-5-20241022";
+  const haikuModel = "claude-haiku-4-5-20251001";
   const sonnetModel = "claude-sonnet-4-20250514";
 
   let modelUsed: "Haiku" | "Sonnet";
