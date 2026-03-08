@@ -11,6 +11,7 @@ const Index = () => {
   const [tab, setTab] = useState("add");
   const [profile, setProfile] = useState<Profile>(getActiveProfile);
   const [duplicateData, setDuplicateData] = useState<ReceiptType | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
