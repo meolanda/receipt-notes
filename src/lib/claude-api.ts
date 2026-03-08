@@ -2,37 +2,31 @@ const CLAUDE_SETTINGS_KEY = "receipt-claude-settings";
 
 export type ClaudeModel = "auto" | "haiku" | "sonnet";
 
+export type DocumentType = "receipt" | "quotation" | "tax_invoice" | "invoice" | "bank_slip" | "market_bill" | "other";
+export type Confidence = "high" | "medium" | "low";
+
 export interface ClaudeSettings {
   apiKey: string;
   modelPreference: ClaudeModel;
 }
 
-export interface ReceiptScanResult {
-  type: "receipt";
-  store_name: string;
-  date: string;
-  category: string;
+export interface ScanResult {
+  document_type: DocumentType;
+  confidence: Confidence;
+  store_name: string | null;
+  date: string | null;
+  time: string | null;
+  recipient_name: string | null;
+  doc_number: string | null;
+  tax_id: string | null;
+  reference_id: string | null;
   items: { name: string; quantity: number; unit_price: number; total: number }[];
-  subtotal: number;
-  vat: number;
-  total: number;
-  notes: string;
+  subtotal: number | null;
+  vat: number | null;
+  total: number | null;
+  notes: string | null;
   modelUsed: "Haiku" | "Sonnet";
 }
-
-export interface BankSlipScanResult {
-  type: "bank_slip";
-  bank: string;
-  date: string;
-  time: string;
-  recipient_name: string;
-  amount: number;
-  reference_id: string;
-  notes: string;
-  modelUsed: "Haiku" | "Sonnet";
-}
-
-export type ScanResult = ReceiptScanResult | BankSlipScanResult;
 
 export function getClaudeSettings(): ClaudeSettings {
   try {
@@ -47,39 +41,86 @@ export function saveClaudeSettings(settings: ClaudeSettings): void {
   localStorage.setItem(CLAUDE_SETTINGS_KEY, JSON.stringify(settings));
 }
 
-const PROMPT = `อ่านรูปนี้และระบุว่าเป็น "ใบเสร็จ/ใบเสนอราคา" หรือ "สลิปโอนเงิน" แล้วดึงข้อมูลออกมาในรูปแบบ JSON เท่านั้น ไม่ต้องมีข้อความอื่น:
+const PROMPT = `วิเคราะห์เอกสารนี้และทำตามขั้นตอนดังนี้:
 
-ถ้าเป็นใบเสร็จ/ใบเสนอราคา:
+ขั้นที่ 1: ระบุประเภทเอกสาร (document_type) จากรายการนี้:
+- "receipt" = ใบเสร็จร้านค้าทั่วไป, POS, ใบเสร็จรับเงิน
+- "quotation" = ใบเสนอราคา, Quotation
+- "tax_invoice" = ใบกำกับภาษี, Tax Invoice
+- "invoice" = ใบแจ้งหนี้, Invoice
+- "bank_slip" = สลิปโอนเงิน, สลิปธนาคาร, PromptPay
+- "market_bill" = บิลเงินสดตลาด, บิลมือ, กระดาษจดราคา
+- "other" = อื่นๆ
+
+ขั้นที่ 2: ดึงข้อมูลตาม pattern ของแต่ละประเภท:
+
+[receipt / tax_invoice]
+- store_name: ชื่อร้าน/บริษัท (บรรทัดบนสุด หรือตัวใหญ่สุด)
+- date: วันที่ในเอกสาร (YYYY-MM-DD)
+- items: รายการสินค้าทุกรายการ [{name, quantity, unit_price, total}]
+- subtotal: ยอดก่อน VAT
+- vat: ภาษีมูลค่าเพิ่ม (ถ้ามี)
+- total: ยอดรวมสุทธิ (ตัวเลขสุดท้าย ไม่ใช่เงินสดหรือเงินทอน)
+- tax_id: เลขผู้เสียภาษี (ถ้ามี)
+
+[quotation / invoice]
+- store_name: ชื่อบริษัทผู้เสนอราคา
+- date: วันที่ในเอกสาร (YYYY-MM-DD)
+- doc_number: เลขที่ใบเสนอราคา/ใบแจ้งหนี้
+- items: รายการทุกรายการ [{name, quantity, unit_price, total}]
+- subtotal: ยอดก่อน VAT
+- vat: VAT 7% (ถ้ามี)
+- total: ยอดรวมสุทธิ
+- notes: เงื่อนไข หมายเหตุ (ถ้ามี)
+
+[bank_slip]
+- bank: ชื่อธนาคารหรือช่องทาง (เช่น กสิกรไทย, SCB, PromptPay)
+- date: วันที่โอน (YYYY-MM-DD)
+- time: เวลาโอน (HH:mm)
+- recipient_name: ชื่อผู้รับเงิน
+- amount: จำนวนเงินที่โอน (ตัวเลขหลัก ไม่ใช่ค่าธรรมเนียม)
+- reference_id: เลขอ้างอิง/Transaction ID
+- notes: หมายเหตุ (ถ้ามี)
+
+[market_bill]
+- store_name: ชื่อร้านหรือตลาด (ถ้าไม่มีให้ใส่ "ร้านค้า/ตลาด")
+- date: วันที่ (ถ้าไม่มีให้ใส่วันที่วันนี้)
+- items: แปลงรายการที่อ่านได้ เช่น "ผัก 20" → {name:"ผัก", quantity:1, unit_price:20, total:20}
+- total: ยอดรวมทั้งหมด (ถ้าไม่มีให้รวมจาก items)
+- confidence: "low" เสมอสำหรับบิลมือเขียน
+
+ขั้นที่ 3: ระบุค่า confidence โดยรวม:
+- "high" = อ่านได้ชัดเจนทุก field
+- "medium" = อ่านได้ส่วนใหญ่ บางส่วนอาจไม่แน่ใจ
+- "low" = ภาพไม่ชัด ลายมือยาก หรือข้อมูลไม่ครบ
+
+ตอบในรูปแบบ JSON เท่านั้น ไม่มีข้อความอื่น:
 {
-  "type": "receipt",
-  "store_name": "string",
-  "date": "string (YYYY-MM-DD)",
-  "category": "string",
-  "items": [{"name": "string", "quantity": "number", "unit_price": "number", "total": "number"}],
-  "subtotal": "number",
-  "vat": "number",
-  "total": "number",
-  "notes": "string"
+  "document_type": string,
+  "confidence": string,
+  "store_name": string,
+  "date": string,
+  "time": string,
+  "recipient_name": string,
+  "doc_number": string,
+  "tax_id": string,
+  "reference_id": string,
+  "bank": string,
+  "amount": number,
+  "items": [{name, quantity, unit_price, total}],
+  "subtotal": number,
+  "vat": number,
+  "total": number,
+  "notes": string
 }
 
-ถ้าเป็นสลิปโอนเงิน/สลิปธนาคาร:
-{
-  "type": "bank_slip",
-  "bank": "string (ชื่อธนาคาร)",
-  "date": "string (YYYY-MM-DD)",
-  "time": "string (HH:mm)",
-  "recipient_name": "string",
-  "amount": "number",
-  "reference_id": "string",
-  "notes": "string"
-}`;
+ถ้า field ไหนไม่มีข้อมูลให้ใส่ null`;
 
 async function callClaude(
   apiKey: string,
   model: string,
   imageBase64: string
 ): Promise<any> {
-  // Extract mime type and base64 data
   const match = imageBase64.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!match) throw new Error("Invalid image data");
   
@@ -120,7 +161,6 @@ async function callClaude(
   const result = await res.json();
   const text = result.content?.[0]?.text || "";
   
-  // Extract JSON from response
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("ไม่สามารถอ่าน JSON จากคำตอบ AI ได้");
   
@@ -128,7 +168,7 @@ async function callClaude(
 }
 
 function isIncomplete(data: any): boolean {
-  if (data.type === "bank_slip") {
+  if (data.document_type === "bank_slip") {
     return !data.recipient_name || !data.date || (!data.amount && data.amount !== 0);
   }
   return !data.store_name || !data.date || (!data.total && data.total !== 0);
@@ -160,25 +200,26 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
     }
   }
 
-  if (data.type === "bank_slip") {
-    return {
-      type: "bank_slip",
-      bank: data.bank || "",
-      date: data.date || "",
-      time: data.time || "",
-      recipient_name: data.recipient_name || "",
-      amount: Number(data.amount) || 0,
-      reference_id: data.reference_id || "",
-      notes: data.notes || "",
-      modelUsed,
-    };
-  }
+  // For bank_slip, map amount to total if total is missing
+  const totalValue = data.document_type === "bank_slip"
+    ? Number(data.amount) || Number(data.total) || 0
+    : Number(data.total) || 0;
+
+  // For market_bill, force confidence to low
+  const confidence: Confidence = data.document_type === "market_bill"
+    ? "low"
+    : (data.confidence || "medium");
 
   return {
-    type: "receipt",
-    store_name: data.store_name || "",
-    date: data.date || "",
-    category: data.category || "",
+    document_type: data.document_type || "other",
+    confidence,
+    store_name: data.store_name || null,
+    date: data.date || null,
+    time: data.time || null,
+    recipient_name: data.recipient_name || null,
+    doc_number: data.doc_number || null,
+    tax_id: data.tax_id || null,
+    reference_id: data.reference_id || null,
     items: Array.isArray(data.items)
       ? data.items.map((i: any) => ({
           name: i.name || "",
@@ -187,10 +228,10 @@ export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
           total: Number(i.total) || 0,
         }))
       : [],
-    subtotal: Number(data.subtotal) || 0,
-    vat: Number(data.vat) || 0,
-    total: Number(data.total) || 0,
-    notes: data.notes || "",
+    subtotal: data.subtotal != null ? Number(data.subtotal) : null,
+    vat: data.vat != null ? Number(data.vat) : null,
+    total: totalValue,
+    notes: data.notes || null,
     modelUsed,
   };
 }

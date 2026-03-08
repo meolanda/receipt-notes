@@ -10,8 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { Camera, Plus, Trash2, Receipt, Bot, Loader2 } from "lucide-react";
 import { saveReceipt, getCategoriesForProfile, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
-import { scanReceipt, getClaudeSettings } from "@/lib/claude-api";
+import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
 import { toast } from "sonner";
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  receipt: "ใบเสร็จ",
+  quotation: "ใบเสนอราคา",
+  tax_invoice: "ใบกำกับภาษี",
+  invoice: "ใบแจ้งหนี้",
+  bank_slip: "สลิปโอนเงิน",
+  market_bill: "บิลตลาด/มือเขียน",
+  other: "อื่นๆ",
+};
 
 interface ReceiptFormProps {
   profile: Profile;
@@ -35,6 +45,8 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
   const [vatEnabled, setVatEnabled] = useState(duplicateData?.vatEnabled || false);
   const [scanning, setScanning] = useState(false);
   const [scanModel, setScanModel] = useState<string | null>(null);
+  const [scanConfidence, setScanConfidence] = useState<string | null>(null);
+  const [scanDocType, setScanDocType] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +54,8 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
   const vatAmount = vatEnabled ? totalAmount * 0.07 : 0;
   const grandTotal = totalAmount + vatAmount;
+
+  const isLowConfidence = scanConfidence === "low";
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,6 +82,91 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     setItems(updated);
   };
 
+  const applyAutoFill = (result: ScanResult) => {
+    // Never auto-fill title
+    setTitle("");
+    setScanConfidence(result.confidence);
+    setScanDocType(result.document_type);
+
+    // Date
+    if (result.date) setDate(result.date);
+
+    // Items
+    if (result.items.length > 0) {
+      setItems(
+        result.items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: i.unit_price || (i.total / (i.quantity || 1)),
+        }))
+      );
+    }
+
+    // VAT
+    if (result.vat && result.vat > 0) {
+      setVatEnabled(true);
+    }
+
+    // Category matching
+    if (result.document_type !== "bank_slip") {
+      // Try to match from notes or doc type
+      const catGuess = result.document_type === "market_bill" ? "อาหาร" : null;
+      if (catGuess) {
+        const matched = categories.find((c) => c === catGuess);
+        if (matched) setCategory(matched);
+      }
+    }
+
+    switch (result.document_type) {
+      case "bank_slip":
+        setStoreName(result.recipient_name || "");
+        setCategory("อื่นๆ");
+        {
+          const parts = [`Ref: ${result.reference_id || "-"}`];
+          if (result.notes) parts.push(result.notes);
+          // bank and time info
+          const extra: string[] = [];
+          if ((result as any).bank) extra.push((result as any).bank);
+          if (result.time) extra.push(result.time);
+          if (extra.length) parts[0] += " | " + extra.join(" | ");
+          setDescription(parts.join("\n"));
+        }
+        if (result.total) {
+          setItems([{ name: `โอนเงินให้ ${result.recipient_name || ""}`, quantity: 1, price: result.total }]);
+        }
+        break;
+
+      case "receipt":
+      case "tax_invoice":
+        setStoreName(result.store_name || "");
+        if (result.doc_number) setDescription(result.doc_number);
+        else if (result.tax_id) setDescription(`Tax ID: ${result.tax_id}`);
+        else if (result.notes) setDescription(result.notes);
+        break;
+
+      case "quotation":
+      case "invoice":
+        setStoreName(result.store_name || "");
+        {
+          const parts: string[] = [];
+          if (result.doc_number) parts.push(`เลขที่: ${result.doc_number}`);
+          if (result.notes) parts.push(result.notes);
+          setDescription(parts.join("\n") || "");
+        }
+        break;
+
+      case "market_bill":
+        setStoreName(result.store_name || "ร้านค้า/ตลาด");
+        if (result.notes) setDescription(result.notes);
+        break;
+
+      default:
+        setStoreName(result.store_name || "");
+        if (result.notes) setDescription(result.notes);
+        break;
+    }
+  };
+
   const handleScan = async () => {
     if (!imageData) {
       toast.error("กรุณาอัปโหลดรูปใบเสร็จก่อน");
@@ -81,51 +180,30 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
 
     setScanning(true);
     setScanModel(null);
+    setScanConfidence(null);
+    setScanDocType(null);
     try {
       const result = await scanReceipt(imageData);
-      
-      // DO NOT auto-fill title — user must name it themselves
-      setTitle("");
+      applyAutoFill(result);
+      setScanModel(result.modelUsed);
 
-      if (result.type === "bank_slip") {
-        setStoreName(result.recipient_name);
-        if (result.date) setDate(result.date);
-        setCategory("อื่นๆ");
-        setDescription(`Ref: ${result.reference_id}${result.bank ? ` | ${result.bank}` : ''}${result.time ? ` | ${result.time}` : ''}`);
-        setItems([{ name: `โอนเงินให้ ${result.recipient_name}`, quantity: 1, price: result.amount }]);
-        if (result.notes) setDescription(prev => prev + `\n${result.notes}`);
-      } else {
-        setStoreName(result.store_name);
-        if (result.date) setDate(result.date);
-        if (result.notes) setDescription(result.notes);
-        
-        if (result.category) {
-          const matched = categories.find((c) =>
-            c.toLowerCase().includes(result.category.toLowerCase()) ||
-            result.category.toLowerCase().includes(c.toLowerCase())
-          );
-          if (matched) setCategory(matched);
-        }
+      const typeLabel = DOC_TYPE_LABELS[result.document_type] || result.document_type;
 
-        if (result.items.length > 0) {
-          setItems(
-            result.items.map((i) => ({
-              name: i.name,
-              quantity: i.quantity,
-              price: i.unit_price || (i.total / (i.quantity || 1)),
-            }))
-          );
-        }
-
-        if (result.vat > 0) {
-          setVatEnabled(true);
-        }
+      // Confidence-based toast messages
+      if (result.document_type === "market_bill") {
+        toast.warning("⚠️ บิลมือเขียน โปรดตรวจสอบข้อมูลก่อนบันทึก");
       }
 
-      setScanModel(result.modelUsed);
-      const typeLabel = result.type === "bank_slip" ? "สลิปโอนเงิน" : "ใบเสร็จ";
-      toast.success(`สแกน${typeLabel}สำเร็จ ✅ กรุณาตั้งชื่อรายการก่อนบันทึก`);
-      
+      if (result.confidence === "low") {
+        toast.warning("⚠️ AI ไม่แน่ใจในบางข้อมูล กรุณาตรวจสอบก่อนบันทึก");
+      } else if (result.confidence === "high") {
+        toast.success(`✅ สแกนสำเร็จ (${typeLabel}) - ${result.modelUsed}`);
+      } else {
+        toast.success(`สแกนสำเร็จ ✅ (${typeLabel}) - ${result.modelUsed}`);
+      }
+
+      toast.info("กรุณาตั้งชื่อรายการก่อนบันทึก");
+
       // Auto-focus title field
       setTimeout(() => titleRef.current?.focus(), 100);
     } catch (err: any) {
@@ -187,8 +265,13 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
     setReimbursementNote("");
     setVatEnabled(false);
     setScanModel(null);
+    setScanConfidence(null);
+    setScanDocType(null);
     onSaved();
   };
+
+  // Yellow highlight class for low confidence fields
+  const lowConfCls = isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
 
   return (
     <Card className="receipt-shadow fade-in">
@@ -196,11 +279,32 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
         <CardTitle className="flex items-center gap-2 text-lg">
           <Receipt className="h-5 w-5 text-primary" />
           บันทึกใบเสร็จใหม่
-          {scanModel && (
-            <Badge variant="outline" className="ml-auto text-xs bg-green-50 text-green-700 border-green-200">
-              {scanModel} ✓
-            </Badge>
-          )}
+          <div className="ml-auto flex items-center gap-1.5">
+            {scanDocType && (
+              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                {DOC_TYPE_LABELS[scanDocType] || scanDocType}
+              </Badge>
+            )}
+            {scanModel && (
+              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                {scanModel} ✓
+              </Badge>
+            )}
+            {scanConfidence && (
+              <Badge
+                variant="outline"
+                className={`text-xs ${
+                  scanConfidence === "high"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : scanConfidence === "medium"
+                    ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                    : "bg-red-50 text-red-700 border-red-200"
+                }`}
+              >
+                {scanConfidence === "high" ? "✅" : scanConfidence === "medium" ? "⚠️" : "⚠️"} {scanConfidence}
+              </Badge>
+            )}
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -256,13 +360,13 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
                 placeholder="เช่น โฮมโปร, 7-Eleven"
                 value={storeName}
                 onChange={(e) => setStoreName(e.target.value)}
-                className="mt-1"
+                className={`mt-1 ${lowConfCls}`}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="date">วันที่ *</Label>
-                <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1" />
+                <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`mt-1 ${lowConfCls}`} />
               </div>
               <div>
                 <Label htmlFor="category">หมวดหมู่ *</Label>
@@ -305,7 +409,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
 
           <div>
             <Label htmlFor="desc">หมายเหตุ</Label>
-            <Textarea id="desc" placeholder="รายละเอียดเพิ่มเติม..." value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1" rows={2} />
+            <Textarea id="desc" placeholder="รายละเอียดเพิ่มเติม..." value={description} onChange={(e) => setDescription(e.target.value)} className={`mt-1 ${lowConfCls}`} rows={2} />
           </div>
 
           {/* Items */}
@@ -314,9 +418,9 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
             <div className="mt-2 space-y-2">
               {items.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <Input placeholder="ชื่อรายการ" value={item.name} onChange={(e) => updateItem(idx, "name", e.target.value)} className="flex-1" />
-                  <Input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(idx, "quantity", parseInt(e.target.value) || 1)} className="w-16 text-center" />
-                  <Input type="number" min={0} step={0.01} placeholder="ราคา" value={item.price || ""} onChange={(e) => updateItem(idx, "price", parseFloat(e.target.value) || 0)} className="w-24" />
+                  <Input placeholder="ชื่อรายการ" value={item.name} onChange={(e) => updateItem(idx, "name", e.target.value)} className={`flex-1 ${lowConfCls}`} />
+                  <Input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(idx, "quantity", parseInt(e.target.value) || 1)} className={`w-16 text-center ${lowConfCls}`} />
+                  <Input type="number" min={0} step={0.01} placeholder="ราคา" value={item.price || ""} onChange={(e) => updateItem(idx, "price", parseFloat(e.target.value) || 0)} className={`w-24 ${lowConfCls}`} />
                   {items.length > 1 && (
                     <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" onClick={() => removeItem(idx)}>
                       <Trash2 className="h-3.5 w-3.5" />
