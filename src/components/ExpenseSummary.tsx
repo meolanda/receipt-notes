@@ -1,10 +1,27 @@
+import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { type Receipt, type Profile, CATEGORY_COLORS } from "@/lib/receipt-store";
 import { TrendingUp, CalendarDays, Clock } from "lucide-react";
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from "recharts";
 
 interface ExpenseSummaryProps {
   receipts: Receipt[];
   profile: Profile;
+}
+
+const PIE_COLORS = [
+  "#f97316", "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
+  "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#6366f1",
+  "#14b8a6", "#e11d48",
+];
+
+const MONTH_NAMES = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+function formatBaht(v: number) {
+  return `฿${v.toLocaleString("th-TH", { minimumFractionDigits: 0 })}`;
 }
 
 export default function ExpenseSummary({ receipts, profile }: ExpenseSummaryProps) {
@@ -20,13 +37,33 @@ export default function ExpenseSummary({ receipts, profile }: ExpenseSummaryProp
     .filter((r) => r.tag === "เบิกได้")
     .reduce((s, r) => s + r.grandTotal, 0);
 
-  // Category breakdown for this profile
-  const categoryTotals: Record<string, number> = {};
-  profileReceipts.forEach((r) => {
-    categoryTotals[r.category] = (categoryTotals[r.category] || 0) + r.grandTotal;
-  });
-  const sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
-  const maxCatTotal = sortedCategories.length > 0 ? sortedCategories[0][1] : 0;
+  // Category breakdown
+  const categoryData = useMemo(() => {
+    const totals: Record<string, number> = {};
+    profileReceipts.forEach((r) => {
+      totals[r.category] = (totals[r.category] || 0) + r.grandTotal;
+    });
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], i) => ({ name, value, color: PIE_COLORS[i % PIE_COLORS.length] }));
+  }, [profileReceipts]);
+
+  // Monthly data (last 6 months)
+  const monthlyData = useMemo(() => {
+    const months: { key: string; name: string; total: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key, name: MONTH_NAMES[d.getMonth()], total: 0 });
+    }
+    profileReceipts.forEach((r) => {
+      const rDate = new Date(r.date);
+      const key = `${rDate.getFullYear()}-${String(rDate.getMonth() + 1).padStart(2, "0")}`;
+      const m = months.find((m) => m.key === key);
+      if (m) m.total += r.grandTotal;
+    });
+    return months;
+  }, [profileReceipts]);
 
   // Profile comparison
   const personalTotal = receipts.filter((r) => r.profile === "personal").reduce((s, r) => s + r.grandTotal, 0);
@@ -49,6 +86,7 @@ export default function ExpenseSummary({ receipts, profile }: ExpenseSummaryProp
 
   return (
     <div className="space-y-4 fade-in">
+      {/* Stats cards */}
       <div className="grid grid-cols-2 gap-3">
         {stats.map((s) => (
           <Card key={s.label} className="receipt-shadow">
@@ -77,6 +115,78 @@ export default function ExpenseSummary({ receipts, profile }: ExpenseSummaryProp
         </Card>
       )}
 
+      {/* Monthly bar chart */}
+      {monthlyData.some((m) => m.total > 0) && (
+        <Card className="receipt-shadow">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground mb-3">ค่าใช้จ่ายรายเดือน (6 เดือนล่าสุด)</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+                <Tooltip
+                  formatter={(value: number) => [formatBaht(value), "ยอดรวม"]}
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Category pie chart */}
+      {categoryData.length > 0 && (
+        <Card className="receipt-shadow">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground mb-3">สัดส่วนตามหมวดหมู่</p>
+            <div className="flex items-center gap-2">
+              <ResponsiveContainer width="50%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={35}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => [formatBaht(value)]}
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex-1 space-y-1.5">
+                {categoryData.map((cat) => (
+                  <div key={cat.name} className="flex items-center gap-2 text-xs">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                    <span className="truncate flex-1 text-muted-foreground">{cat.name}</span>
+                    <span className="font-medium text-foreground shrink-0">{formatBaht(cat.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Profile comparison */}
       <Card className="receipt-shadow">
         <CardContent className="p-4">
@@ -94,29 +204,13 @@ export default function ExpenseSummary({ receipts, profile }: ExpenseSummaryProp
         </CardContent>
       </Card>
 
-      {/* Category breakdown */}
-      {sortedCategories.length > 0 && (
-        <Card className="receipt-shadow">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-3">ค่าใช้จ่ายตามหมวดหมู่</p>
-            <div className="space-y-2">
-              {sortedCategories.map(([cat, total]) => (
-                <div key={cat}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${CATEGORY_COLORS[cat] || ""}`}>{cat}</span>
-                    <span className="font-medium">฿{total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{ width: `${maxCatTotal > 0 ? (total / maxCatTotal) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Empty state */}
+      {profileReceipts.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground">
+          <p className="text-3xl mb-2">📊</p>
+          <p>ยังไม่มีข้อมูลค่าใช้จ่าย</p>
+          <p className="text-xs mt-1">เพิ่มใบเสร็จเพื่อดูกราฟสรุป</p>
+        </div>
       )}
     </div>
   );
