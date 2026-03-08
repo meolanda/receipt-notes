@@ -22,6 +22,7 @@ const Index = () => {
 
   const handleDuplicate = (receipt: ReceiptType) => {
     setDuplicateData(receipt);
+    setFormKey((k) => k + 1);
     setTab("add");
   };
 
