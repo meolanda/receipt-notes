@@ -20,6 +20,7 @@ export interface ScanResult {
   doc_number: string | null;
   tax_id: string | null;
   reference_id: string | null;
+  bank: string | null;
   items: { name: string; quantity: number; unit_price: number; total: number }[];
   subtotal: number | null;
   vat: number | null;
