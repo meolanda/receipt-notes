@@ -14,10 +14,9 @@ interface ReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
   duplicateData?: ReceiptType | null;
-  onDuplicateHandled?: () => void;
 }
 
-export default function ReceiptForm({ profile, onSaved, duplicateData, onDuplicateHandled }: ReceiptFormProps) {
+export default function ReceiptForm({ profile, onSaved, duplicateData }: ReceiptFormProps) {
   const [title, setTitle] = useState(duplicateData?.title || "");
   const [description, setDescription] = useState(duplicateData?.description || "");
   const [category, setCategory] = useState(duplicateData?.category || "");
