@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Camera, Plus, Trash2, Receipt } from "lucide-react";
 import { saveReceipt, CATEGORIES, TAGS, type ReceiptItem, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
+import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { toast } from "sonner";
 
 interface ReceiptFormProps {
@@ -70,7 +71,7 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
       toast.error("กรุณาเลือกหมวดหมู่");
       return;
     }
-    saveReceipt({
+    const newReceipt = saveReceipt({
       profile,
       title: title.trim(),
       description: description.trim(),
@@ -87,6 +88,17 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
       imageData,
     });
     toast.success("บันทึกใบเสร็จเรียบร้อย!");
+
+    // Auto-sync to Google if connected
+    if (isGoogleConnected()) {
+      syncReceiptToGoogle(newReceipt).then(() => {
+        toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
+      }).catch((err) => {
+        console.error("Google sync error:", err);
+        toast.error("Sync ไปยัง Google ไม่สำเร็จ: " + err.message);
+      });
+    }
+
     setTitle("");
     setDescription("");
     setCategory("");

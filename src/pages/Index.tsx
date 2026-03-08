@@ -1,10 +1,13 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Receipt, ListChecks, BarChart3 } from "lucide-react";
+import { Receipt, ListChecks, BarChart3, Settings } from "lucide-react";
 import { getReceipts, getActiveProfile, setActiveProfile, type Receipt as ReceiptType, type Profile } from "@/lib/receipt-store";
+import { handleOAuthCallback } from "@/lib/google-api";
 import ReceiptForm from "@/components/ReceiptForm";
 import ReceiptList from "@/components/ReceiptList";
 import ExpenseSummary from "@/components/ExpenseSummary";
+import GoogleSettings from "@/components/GoogleSettings";
+import { toast } from "sonner";
 
 const Index = () => {
   const [receipts, setReceipts] = useState<ReceiptType[]>(getReceipts);
@@ -12,6 +15,14 @@ const Index = () => {
   const [profile, setProfile] = useState<Profile>(getActiveProfile);
   const [duplicateData, setDuplicateData] = useState<ReceiptType | null>(null);
   const [formKey, setFormKey] = useState(0);
+
+  // Handle OAuth callback on mount
+  useEffect(() => {
+    if (handleOAuthCallback()) {
+      toast.success("เชื่อมต่อ Google Account สำเร็จ! ✅");
+      setTab("settings");
+    }
+  }, []);
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
@@ -77,6 +88,9 @@ const Index = () => {
             <TabsTrigger value="summary" className="flex-1 gap-1.5">
               <BarChart3 className="h-4 w-4" /> สรุป
             </TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1 gap-1.5">
+              <Settings className="h-4 w-4" /> ตั้งค่า
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="add" className="mt-4">
             <ReceiptForm
@@ -91,6 +105,9 @@ const Index = () => {
           </TabsContent>
           <TabsContent value="summary" className="mt-4">
             <ExpenseSummary receipts={receipts} profile={profile} />
+          </TabsContent>
+          <TabsContent value="settings" className="mt-4">
+            <GoogleSettings />
           </TabsContent>
         </Tabs>
       </main>

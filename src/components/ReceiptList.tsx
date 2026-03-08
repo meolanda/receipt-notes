@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Search, Trash2, ChevronDown, ChevronUp, ImageIcon, Copy } from "lucide-react";
+import SyncButton from "@/components/SyncButton";
 import {
   type Receipt, type Profile, deleteReceipt, downloadCSV,
   CATEGORIES, TAGS, TAG_COLORS, CATEGORY_COLORS
@@ -128,6 +129,9 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate 
           </SelectContent>
         </Select>
       </div>
+
+      {/* Sync to Google */}
+      <SyncButton receipts={filtered} />
 
       {/* List */}
       {filtered.length === 0 ? (
