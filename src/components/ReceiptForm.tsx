@@ -123,12 +123,11 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
         setCategory("อื่นๆ");
         {
           const parts = [`Ref: ${result.reference_id || "-"}`];
-          if (result.notes) parts.push(result.notes);
-          // bank and time info
           const extra: string[] = [];
-          if ((result as any).bank) extra.push((result as any).bank);
+          if (result.bank) extra.push(result.bank);
           if (result.time) extra.push(result.time);
           if (extra.length) parts[0] += " | " + extra.join(" | ");
+          if (result.notes) parts.push(result.notes);
           setDescription(parts.join("\n"));
         }
         if (result.total) {
