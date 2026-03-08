@@ -88,6 +88,17 @@ export default function ReceiptForm({ profile, onSaved, duplicateData }: Receipt
       imageData,
     });
     toast.success("บันทึกใบเสร็จเรียบร้อย!");
+
+    // Auto-sync to Google if connected
+    if (isGoogleConnected()) {
+      syncReceiptToGoogle(newReceipt).then(() => {
+        toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
+      }).catch((err) => {
+        console.error("Google sync error:", err);
+        toast.error("Sync ไปยัง Google ไม่สำเร็จ: " + err.message);
+      });
+    }
+
     setTitle("");
     setDescription("");
     setCategory("");
