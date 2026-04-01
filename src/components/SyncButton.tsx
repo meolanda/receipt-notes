@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { isGoogleConnected, isTokenExpired, getGoogleSettings, syncReceiptToGoogle } from "@/lib/google-api";
+import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
 import type { Receipt } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
@@ -16,19 +17,23 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
   const [statusText, setStatusText] = useState("");
 
   const handleSync = async () => {
-    if (isTokenExpired()) {
-      toast.error("Token หมดอายุแล้ว กรุณาเชื่อมต่อ Google Account ใหม่ที่แท็บตั้งค่า");
-      return;
-    }
-    if (!isGoogleConnected()) {
-      toast.error("กรุณาเชื่อมต่อ Google Account ก่อน (ไปที่แท็บตั้งค่า)");
-      return;
-    }
+    const useServer = isServerSyncAvailable();
 
-    const settings = getGoogleSettings();
-    if (!settings.spreadsheetId) {
-      toast.error("กรุณากรอก Spreadsheet ID ก่อน");
-      return;
+    if (!useServer) {
+      // Localhost: ใช้ OAuth
+      if (isTokenExpired()) {
+        toast.error("Token หมดอายุแล้ว กรุณาเชื่อมต่อ Google Account ใหม่ที่แท็บตั้งค่า");
+        return;
+      }
+      if (!isGoogleConnected()) {
+        toast.error("กรุณาเชื่อมต่อ Google Account ก่อน (ไปที่แท็บตั้งค่า)");
+        return;
+      }
+      const settings = getGoogleSettings();
+      if (!settings.spreadsheetId) {
+        toast.error("กรุณากรอก Spreadsheet ID ก่อน");
+        return;
+      }
     }
 
     setSyncing(true);
@@ -42,7 +47,11 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
       setStatusText(`กำลัง sync ${i + 1}/${total}...`);
       setProgress(((i + 1) / total) * 100);
       try {
-        await syncReceiptToGoogle(receipts[i]);
+        if (useServer) {
+          await syncReceiptToServer(receipts[i]);
+        } else {
+          await syncReceiptToGoogle(receipts[i]);
+        }
         success++;
       } catch (err) {
         console.error(`Sync error for receipt ${receipts[i].id}:`, err);
@@ -63,7 +72,7 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
 
   if (receipts.length === 0) return null;
 
-  const tokenExpired = isTokenExpired();
+  const tokenExpired = !isServerSyncAvailable() && isTokenExpired();
 
   return (
     <div className="space-y-2">

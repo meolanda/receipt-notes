@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
-import { isGoogleConnected, syncReceiptToGoogle, getGoogleSettings, uploadToDrive } from "@/lib/google-api";
+import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
+import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
@@ -248,27 +249,6 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
     setSaving(true);
 
     try {
-      // Upload image to Google Drive first (if connected + folder set + has image)
-      let imageUrl: string | undefined;
-      let imageDataToSave = imageData;
-      const settings = getGoogleSettings();
-
-      if (imageData && isGoogleConnected() && settings.driveFolderId) {
-        try {
-          const ext = imageData.startsWith("data:image/png") ? "png" : "jpg";
-          const safeName = title.trim().replace(/[^a-zA-Z0-9ก-๙]/g, "_");
-          const fileName = `${date}_${safeName}.${ext}`;
-          const mimeType = ext === "png" ? "image/png" : "image/jpeg";
-          imageUrl = await uploadToDrive(settings.driveFolderId, fileName, imageData, mimeType);
-          imageDataToSave = undefined; // ไม่เก็บ base64 ใน localStorage
-          toast.success("อัปโหลดรูปไปยัง Google Drive สำเร็จ ✅");
-        } catch (err: any) {
-          console.error("Drive upload error:", err);
-          toast.warning("อัปโหลดรูปไป Drive ไม่สำเร็จ เก็บรูปไว้ในเครื่องแทน");
-          imageDataToSave = imageData; // fallback เก็บ base64
-        }
-      }
-
       const receiptData = {
         profile,
         title: title.trim(),
@@ -284,8 +264,7 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
         items: items.filter((i) => i.name.trim()),
         project: project.trim(),
         reimbursementNote: reimbursementNote.trim(),
-        imageData: imageDataToSave,
-        imageUrl,
+        imageData,
         documentType: (scanDocType as DocumentTypeValue) || undefined,
       };
 
@@ -296,12 +275,24 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
         const newReceipt = saveReceipt(receiptData);
         toast.success("บันทึกใบเสร็จเรียบร้อย!");
 
-        if (isGoogleConnected() && settings.spreadsheetId) {
+        // Server sync (Vercel + Apps Script) — ไม่ต้อง login Google
+        if (isServerSyncAvailable()) {
+          syncReceiptToServer(newReceipt).then((imageUrl) => {
+            if (imageUrl) toast.success("Sync + อัปโหลดรูปไป Google Drive ✅");
+            else toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
+          }).catch((err) => {
+            console.error("Server sync error:", err);
+            if (err.message !== "not_configured") {
+              toast.error("Sync ไม่สำเร็จ: " + err.message);
+            }
+          });
+        } else if (isGoogleConnected()) {
+          // Fallback: OAuth (localhost dev)
           syncReceiptToGoogle(newReceipt).then(() => {
             toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
           }).catch((err) => {
             console.error("Google sync error:", err);
-            toast.error("Sync ไปยัง Google Sheets ไม่สำเร็จ: " + err.message);
+            toast.error("Sync ไม่สำเร็จ: " + err.message);
           });
         }
       }
