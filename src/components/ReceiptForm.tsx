@@ -68,7 +68,7 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
           {/* Image upload */}
           <div>
             <Label>รูปใบเสร็จ (ไม่บังคับ)</Label>
-            <input ref={form.fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={form.handleImageUpload} />
+            <input ref={form.fileRef} type="file" accept="image/*" className="hidden" onChange={form.handleImageUpload} />
             {form.imageData ? (
               <div className="relative mt-2">
                 <img src={form.imageData} alt="ใบเสร็จ" className="w-full max-h-48 object-cover rounded-lg border border-border" />
