@@ -20,7 +20,8 @@ export default async function handler(req: any, res: any) {
     try {
       res.json(JSON.parse(text));
     } catch {
-      res.json({ error: "Invalid response from sync server" });
+      console.error("Apps Script non-JSON response:", text.substring(0, 1000));
+      res.status(502).json({ error: "Apps Script returned non-JSON: " + text.substring(0, 200) });
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message });

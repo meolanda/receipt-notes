@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Receipt, ListChecks, BarChart3, Settings } from "lucide-react";
 import { getReceipts, getActiveProfile, setActiveProfile, type Receipt as ReceiptType, type Profile } from "@/lib/receipt-store";
 import { handleOAuthCallback } from "@/lib/google-api";
+import { isServerSyncAvailable, restoreFromServer } from "@/lib/server-sync";
 import ReceiptForm from "@/components/ReceiptForm";
 import ReceiptList from "@/components/ReceiptList";
 import ExpenseSummary from "@/components/ExpenseSummary";
@@ -24,6 +25,18 @@ const Index = () => {
     if (handleOAuthCallback()) {
       toast.success("เชื่อมต่อ Google Account สำเร็จ! ✅");
       setTab("settings");
+      return;
+    }
+    // Auto-restore on first open if localStorage is empty and server sync is available
+    if (isServerSyncAvailable() && getReceipts().length === 0) {
+      restoreFromServer()
+        .then(({ added }) => {
+          if (added > 0) {
+            setReceipts(getReceipts());
+            toast.success(`โหลดข้อมูล ${added} รายการจาก Google Sheets ✅`);
+          }
+        })
+        .catch(() => {/* silent fail */});
     }
   }, []);
 
