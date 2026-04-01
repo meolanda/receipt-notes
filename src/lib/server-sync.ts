@@ -1,4 +1,5 @@
 import type { Receipt } from "./receipt-store";
+import { getReceipts, saveReceipt } from "./receipt-store";
 
 /** true ถ้าไม่ได้รันบน localhost (= deploy บน Vercel) */
 export function isServerSyncAvailable(): boolean {
@@ -18,6 +19,63 @@ export async function checkServerSyncConfigured(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** ดึงข้อมูลจาก Sheets แล้ว merge เข้า localStorage (ไม่ลบของเดิม) */
+export async function restoreFromServer(): Promise<{ added: number; skipped: number }> {
+  const res = await fetch("/api/restore");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Restore error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const rows: any[] = data.receipts || [];
+  const existing = getReceipts();
+
+  let added = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    // dedup: ถ้ามี title+date+profile+grandTotal ตรงกันแล้ว ข้ามไป
+    const isDuplicate = existing.some(
+      (r) =>
+        r.title === row.title &&
+        r.date === row.date &&
+        r.profile === row.profile &&
+        Math.abs(r.grandTotal - (Number(row.grandTotal) || 0)) < 0.01
+    );
+
+    if (isDuplicate) {
+      skipped++;
+      continue;
+    }
+
+    saveReceipt({
+      profile: row.profile === "personal" ? "personal" : "company",
+      title: row.title || "",
+      storeName: row.storeName || "",
+      description: row.description || "",
+      category: row.category || "อื่นๆ",
+      tag: row.tag || "ส่วนตัว",
+      date: row.date || new Date().toISOString().slice(0, 10),
+      totalAmount: Number(row.totalAmount) || 0,
+      vatEnabled: Number(row.vatAmount) > 0,
+      vatAmount: Number(row.vatAmount) || 0,
+      grandTotal: Number(row.grandTotal) || 0,
+      items: Array.isArray(row.items)
+        ? row.items.map((i: any) => ({ name: i.name || "", quantity: Number(i.qty) || 1, price: Number(i.price) || 0 }))
+        : [],
+      project: row.project || "",
+      reimbursementNote: row.reimbursementNote || "",
+      imageUrl: row.imageUrl || undefined,
+    });
+    added++;
+  }
+
+  return { added, skipped };
 }
 
 export async function syncReceiptToServer(receipt: Receipt): Promise<string | undefined> {

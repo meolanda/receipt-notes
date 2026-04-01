@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Link, Unlink, Save, AlertTriangle, Shield } from "lucide-react";
+import { Settings, Link, Unlink, Save, AlertTriangle, Shield, Download, Loader2 } from "lucide-react";
 import {
   getGoogleSettings,
   saveGoogleSettings,
@@ -15,6 +15,7 @@ import {
   clearGoogleToken,
   type GoogleSettings as GoogleSettingsType,
 } from "@/lib/google-api";
+import { isServerSyncAvailable, restoreFromServer } from "@/lib/server-sync";
 import { toast } from "sonner";
 
 export default function GoogleSettings() {
@@ -22,6 +23,26 @@ export default function GoogleSettings() {
   const [connected, setConnected] = useState(isGoogleConnected);
   const [tokenExpired, setTokenExpired] = useState(isTokenExpired);
   const [minutesLeft, setMinutesLeft] = useState(getTokenMinutesLeft);
+  const [restoring, setRestoring] = useState(false);
+  const serverSync = isServerSyncAvailable();
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    try {
+      const { added, skipped } = await restoreFromServer();
+      if (added === 0) {
+        toast.info(`ข้อมูลครบแล้ว (ข้าม ${skipped} รายการที่มีอยู่แล้ว)`);
+      } else {
+        toast.success(`โหลดสำเร็จ เพิ่ม ${added} รายการ (ข้าม ${skipped} รายการซ้ำ)`);
+        // refresh page เพื่ออัปเดต list
+        window.location.reload();
+      }
+    } catch (err: any) {
+      toast.error("โหลดไม่สำเร็จ: " + err.message);
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   useEffect(() => {
     setConnected(isGoogleConnected());
@@ -164,6 +185,20 @@ export default function GoogleSettings() {
             </Button>
           )}
         </div>
+
+        {/* Restore from Sheets */}
+        {serverSync && (
+          <div className="rounded-lg border border-border p-3 space-y-2">
+            <p className="text-sm font-medium">โหลดข้อมูลจาก Google Sheets</p>
+            <p className="text-xs text-muted-foreground">ใช้เมื่อเปิดแอปบนเครื่องใหม่ หรือข้อมูลในเครื่องหาย — จะดึงรายการจาก Sheets มาเพิ่มโดยไม่ลบข้อมูลเดิม</p>
+            <Button onClick={handleRestore} disabled={restoring} variant="outline" className="w-full">
+              {restoring
+                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />กำลังโหลด...</>
+                : <><Download className="h-4 w-4 mr-2" />โหลดข้อมูลจาก Google Sheets</>
+              }
+            </Button>
+          </div>
+        )}
 
         {/* Security Note */}
         <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
