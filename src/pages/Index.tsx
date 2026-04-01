@@ -18,6 +18,7 @@ const Index = () => {
   const [duplicateData, setDuplicateData] = useState<ReceiptType | null>(null);
   const [editData, setEditData] = useState<ReceiptType | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const [formDirty, setFormDirty] = useState(false);
 
   useEffect(() => {
     if (handleOAuthCallback()) {
@@ -29,8 +30,14 @@ const Index = () => {
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
   const handleProfileChange = (p: Profile) => {
+    if (p === profile) return;
+    if (tab === "add" && formDirty) {
+      if (!window.confirm("มีข้อมูลที่กรอกอยู่ ถ้าเปลี่ยน Profile ข้อมูลจะหายไป ต้องการเปลี่ยนหรือไม่?")) return;
+    }
     setProfile(p);
     setActiveProfile(p);
+    setFormDirty(false);
+    setFormKey((k) => k + 1);
   };
 
   const handleDuplicate = (receipt: ReceiptType) => {
@@ -108,10 +115,11 @@ const Index = () => {
             <ReceiptForm
               key={`${profile}-${formKey}`}
               profile={profile}
-              onSaved={() => { refresh(); setDuplicateData(null); setEditData(null); setTab("list"); }}
+              onSaved={() => { refresh(); setDuplicateData(null); setEditData(null); setFormDirty(false); setTab("list"); }}
+              onDirtyChange={setFormDirty}
               duplicateData={duplicateData}
               editData={editData}
-              onCancelEdit={() => { setEditData(null); setFormKey((k) => k + 1); }}
+              onCancelEdit={() => { setEditData(null); setFormDirty(false); setFormKey((k) => k + 1); }}
             />
           </TabsContent>
           <TabsContent value="list" className="mt-4">

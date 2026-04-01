@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import SyncButton from "@/components/SyncButton";
@@ -16,6 +16,8 @@ interface ReceiptListProps {
   onEdit: (receipt: Receipt) => void;
 }
 
+const PAGE_SIZE = 20;
+
 export default function ReceiptList({ receipts, profile, onChanged, onDuplicate, onEdit }: ReceiptListProps) {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("date");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   let filtered = receipts.filter((r) => r.profile === profile);
 
@@ -47,7 +50,11 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
 
   filtered.sort((a, b) => sortBy === "amount" ? b.grandTotal - a.grandTotal : b.date.localeCompare(a.date));
 
+  // Reset pagination เมื่อ filter/search เปลี่ยน
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, filterCategory, filterTag, filterDocType, dateFrom, dateTo, sortBy, profile]);
+
   const totalAll = filtered.reduce((sum, r) => sum + r.grandTotal, 0);
+  const visibleReceipts = filtered.slice(0, visibleCount);
   const profileLabel = profile === "personal" ? "ส่วนตัว" : "บริษัท";
 
   const handleDelete = (id: string) => {
@@ -87,7 +94,7 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
         <ReceiptEmptyState hasReceipts={receipts.length > 0} />
       ) : (
         <div className="space-y-2">
-          {filtered.map((r) => (
+          {visibleReceipts.map((r) => (
             <ReceiptCard
               key={r.id}
               receipt={r}
@@ -98,6 +105,15 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
               onEdit={onEdit}
             />
           ))}
+          {visibleCount < filtered.length && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            >
+              แสดงเพิ่มเติม ({filtered.length - visibleCount} รายการที่เหลือ)
+            </Button>
+          )}
         </div>
       )}
     </div>

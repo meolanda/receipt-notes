@@ -13,13 +13,14 @@ import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 interface ReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   duplicateData?: ReceiptType | null;
   editData?: ReceiptType | null;
   onCancelEdit?: () => void;
 }
 
-export default function ReceiptForm({ profile, onSaved, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
-  const form = useReceiptForm({ profile, onSaved, duplicateData, editData });
+export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
+  const form = useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData });
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
   const isEditing = !!editData;
 
@@ -202,8 +203,10 @@ export default function ReceiptForm({ profile, onSaved, duplicateData, editData,
             </div>
           )}
 
-          <Button type="submit" className="w-full" size="lg">
-            {isEditing ? "💾 บันทึกการแก้ไข" : "บันทึกใบเสร็จ"}
+          <Button type="submit" className="w-full" size="lg" disabled={form.saving}>
+            {form.saving ? (
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" />กำลังอัปโหลด...</>
+            ) : isEditing ? "💾 บันทึกการแก้ไข" : "บันทึกใบเสร็จ"}
           </Button>
         </form>
       </CardContent>

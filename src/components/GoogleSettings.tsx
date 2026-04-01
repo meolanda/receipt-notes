@@ -4,11 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Link, Unlink, Save } from "lucide-react";
+import { Settings, Link, Unlink, Save, AlertTriangle, Shield } from "lucide-react";
 import {
   getGoogleSettings,
   saveGoogleSettings,
   isGoogleConnected,
+  isTokenExpired,
+  getTokenMinutesLeft,
   startGoogleOAuth,
   clearGoogleToken,
   type GoogleSettings as GoogleSettingsType,
@@ -18,9 +20,21 @@ import { toast } from "sonner";
 export default function GoogleSettings() {
   const [settings, setSettings] = useState<GoogleSettingsType>(getGoogleSettings);
   const [connected, setConnected] = useState(isGoogleConnected);
+  const [tokenExpired, setTokenExpired] = useState(isTokenExpired);
+  const [minutesLeft, setMinutesLeft] = useState(getTokenMinutesLeft);
 
   useEffect(() => {
     setConnected(isGoogleConnected());
+    setTokenExpired(isTokenExpired());
+    setMinutesLeft(getTokenMinutesLeft());
+
+    // อัปเดตสถานะ token ทุก 1 นาที
+    const interval = setInterval(() => {
+      setConnected(isGoogleConnected());
+      setTokenExpired(isTokenExpired());
+      setMinutesLeft(getTokenMinutesLeft());
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSave = () => {
@@ -57,7 +71,7 @@ export default function GoogleSettings() {
           <span className="text-sm font-medium">สถานะการเชื่อมต่อ</span>
           {connected ? (
             <Badge className="bg-green-100 text-green-700 border-green-200">
-              ✅ เชื่อมต่อแล้ว
+              ✅ เชื่อมต่อแล้ว {minutesLeft !== null && `(${minutesLeft} นาที)`}
             </Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground">
@@ -65,6 +79,17 @@ export default function GoogleSettings() {
             </Badge>
           )}
         </div>
+
+        {/* Token Expired Warning */}
+        {tokenExpired && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Token หมดอายุแล้ว</p>
+              <p className="text-xs mt-0.5">Sync จะล้มเหลว กรุณากดเชื่อมต่อ Google Account ใหม่อีกครั้ง</p>
+            </div>
+          </div>
+        )}
 
         {/* Client ID */}
         <div>
@@ -138,6 +163,12 @@ export default function GoogleSettings() {
               <Link className="h-4 w-4 mr-1" /> เชื่อมต่อ Google Account
             </Button>
           )}
+        </div>
+
+        {/* Security Note */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
+          <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>Client ID และ Folder ID เก็บใน browser (localStorage) บนเครื่องนี้เท่านั้น ไม่มีการส่งข้อมูลไปที่อื่น</span>
         </div>
 
         {/* Instructions */}

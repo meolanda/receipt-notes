@@ -52,6 +52,32 @@ export function isGoogleConnected(): boolean {
   return getGoogleToken() !== null;
 }
 
+/** คืนจำนวนนาทีที่ token ยังใช้ได้ หรือ null ถ้าไม่มี/หมดแล้ว */
+export function getTokenMinutesLeft(): number | null {
+  try {
+    const data = localStorage.getItem(TOKEN_KEY);
+    if (!data) return null;
+    const token: GoogleToken = JSON.parse(data);
+    const msLeft = token.expiresAt - Date.now();
+    if (msLeft <= 0) return null;
+    return Math.floor(msLeft / 60000);
+  } catch {
+    return null;
+  }
+}
+
+/** true ถ้าเคย connect แต่ token หมดอายุแล้ว */
+export function isTokenExpired(): boolean {
+  try {
+    const data = localStorage.getItem(TOKEN_KEY);
+    if (!data) return false;
+    const token: GoogleToken = JSON.parse(data);
+    return Date.now() >= token.expiresAt;
+  } catch {
+    return false;
+  }
+}
+
 const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file";
 
 export function startGoogleOAuth(): void {

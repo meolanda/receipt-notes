@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronUp, ImageIcon, Copy, Trash2, FileText, Pencil } from "lucide-react";
+import { ChevronDown, ChevronUp, ImageIcon, Copy, Trash2, FileText, Pencil, ExternalLink } from "lucide-react";
 import { type Receipt, TAG_COLORS, CATEGORY_COLORS } from "@/lib/receipt-store";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -74,6 +74,22 @@ export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete
               <div className="flex items-center gap-2">
                 <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                 <img src={r.imageData} alt="ใบเสร็จ" className="max-h-40 rounded-md border border-border" />
+              </div>
+            )}
+
+            {!r.imageData && r.imageUrl && (
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                <a
+                  href={r.imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  ดูรูปใบเสร็จใน Google Drive
+                </a>
               </div>
             )}
 

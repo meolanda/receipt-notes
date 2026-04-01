@@ -26,6 +26,7 @@ export interface Receipt {
   project: string;
   reimbursementNote: string;
   imageData?: string;
+  imageUrl?: string;
   documentType?: DocumentTypeValue;
   createdAt: string;
 }

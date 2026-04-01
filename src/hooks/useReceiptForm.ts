@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
-import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
+import { isGoogleConnected, syncReceiptToGoogle, getGoogleSettings, uploadToDrive } from "@/lib/google-api";
 import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
@@ -20,11 +20,12 @@ export { DOC_TYPE_LABELS };
 export interface UseReceiptFormProps {
   profile: Profile;
   onSaved: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   duplicateData?: Receipt | null;
   editData?: Receipt | null;
 }
 
-export function useReceiptForm({ profile, onSaved, duplicateData, editData }: UseReceiptFormProps) {
+export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData }: UseReceiptFormProps) {
   const prefill = editData || duplicateData;
   const [title, setTitle] = useState(prefill?.title || "");
   const [storeName, setStoreName] = useState(prefill?.storeName || "");
@@ -45,6 +46,8 @@ export function useReceiptForm({ profile, onSaved, duplicateData, editData }: Us
   const [scanDocType, setScanDocType] = useState<string | null>(editData?.documentType || null);
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+
+  const markDirty = useCallback(() => onDirtyChange?.(true), [onDirtyChange]);
 
   const categories = getCategoriesForProfile(profile);
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
@@ -173,7 +176,7 @@ export function useReceiptForm({ profile, onSaved, duplicateData, editData }: Us
     }
     const claudeSettings = getClaudeSettings();
     if (!claudeSettings.apiKey) {
-      toast.error("กรุณากรอก Claude API Key ก่อน (ไปที่แท็บตั้งค่า)");
+      toast.error("กรุณากรอก Gemini API Key ก่อน (ไปที่แท็บตั้งค่า)");
       return;
     }
 
@@ -210,57 +213,9 @@ export function useReceiptForm({ profile, onSaved, duplicateData, editData }: Us
     }
   }, [imageData, applyAutoFill]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      toast.error("กรุณากรอกชื่อรายการ");
-      titleRef.current?.focus();
-      return;
-    }
-    if (!category) {
-      toast.error("กรุณาเลือกหมวดหมู่");
-      return;
-    }
+  const [saving, setSaving] = useState(false);
 
-    const receiptData = {
-      profile,
-      title: title.trim(),
-      storeName: storeName.trim(),
-      description: description.trim(),
-      category,
-      tag,
-      date,
-      totalAmount,
-      vatEnabled,
-      vatAmount,
-      grandTotal,
-      items: items.filter((i) => i.name.trim()),
-      project: project.trim(),
-      reimbursementNote: reimbursementNote.trim(),
-      imageData,
-      documentType: (scanDocType as DocumentTypeValue) || undefined,
-    };
-
-    if (editData) {
-      // Update existing receipt
-      updateReceipt(editData.id, receiptData);
-      toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
-    } else {
-      // Save new receipt
-      const newReceipt = saveReceipt(receiptData);
-      toast.success("บันทึกใบเสร็จเรียบร้อย!");
-
-      if (isGoogleConnected()) {
-        syncReceiptToGoogle(newReceipt).then(() => {
-          toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
-        }).catch((err) => {
-          console.error("Google sync error:", err);
-          toast.error("Sync ไปยัง Google ไม่สำเร็จ: " + err.message);
-        });
-      }
-    }
-
-    // Reset form
+  const resetForm = useCallback(() => {
     setTitle("");
     setStoreName("");
     setDescription("");
@@ -275,18 +230,106 @@ export function useReceiptForm({ profile, onSaved, duplicateData, editData }: Us
     setScanModel(null);
     setScanConfidence(null);
     setScanDocType(null);
-    onSaved();
-  }, [title, storeName, description, category, tag, date, totalAmount, vatEnabled, vatAmount, grandTotal, items, project, reimbursementNote, imageData, scanDocType, profile, onSaved, editData]);
+    onDirtyChange?.(false);
+  }, [onDirtyChange]);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast.error("กรุณากรอกชื่อรายการ");
+      titleRef.current?.focus();
+      return;
+    }
+    if (!category) {
+      toast.error("กรุณาเลือกหมวดหมู่");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Upload image to Google Drive first (if connected + folder set + has image)
+      let imageUrl: string | undefined;
+      let imageDataToSave = imageData;
+      const settings = getGoogleSettings();
+
+      if (imageData && isGoogleConnected() && settings.driveFolderId) {
+        try {
+          const ext = imageData.startsWith("data:image/png") ? "png" : "jpg";
+          const safeName = title.trim().replace(/[^a-zA-Z0-9ก-๙]/g, "_");
+          const fileName = `${date}_${safeName}.${ext}`;
+          const mimeType = ext === "png" ? "image/png" : "image/jpeg";
+          imageUrl = await uploadToDrive(settings.driveFolderId, fileName, imageData, mimeType);
+          imageDataToSave = undefined; // ไม่เก็บ base64 ใน localStorage
+          toast.success("อัปโหลดรูปไปยัง Google Drive สำเร็จ ✅");
+        } catch (err: any) {
+          console.error("Drive upload error:", err);
+          toast.warning("อัปโหลดรูปไป Drive ไม่สำเร็จ เก็บรูปไว้ในเครื่องแทน");
+          imageDataToSave = imageData; // fallback เก็บ base64
+        }
+      }
+
+      const receiptData = {
+        profile,
+        title: title.trim(),
+        storeName: storeName.trim(),
+        description: description.trim(),
+        category,
+        tag,
+        date,
+        totalAmount,
+        vatEnabled,
+        vatAmount,
+        grandTotal,
+        items: items.filter((i) => i.name.trim()),
+        project: project.trim(),
+        reimbursementNote: reimbursementNote.trim(),
+        imageData: imageDataToSave,
+        imageUrl,
+        documentType: (scanDocType as DocumentTypeValue) || undefined,
+      };
+
+      if (editData) {
+        updateReceipt(editData.id, receiptData);
+        toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
+      } else {
+        const newReceipt = saveReceipt(receiptData);
+        toast.success("บันทึกใบเสร็จเรียบร้อย!");
+
+        if (isGoogleConnected() && settings.spreadsheetId) {
+          syncReceiptToGoogle(newReceipt).then(() => {
+            toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
+          }).catch((err) => {
+            console.error("Google sync error:", err);
+            toast.error("Sync ไปยัง Google Sheets ไม่สำเร็จ: " + err.message);
+          });
+        }
+      }
+
+      resetForm();
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }, [title, storeName, description, category, tag, date, totalAmount, vatEnabled, vatAmount, grandTotal, items, project, reimbursementNote, imageData, scanDocType, profile, onSaved, editData, resetForm]);
+
+  // Dirty-tracking wrappers
+  const setTitleD = useCallback((v: string) => { setTitle(v); markDirty(); }, [markDirty]);
+  const setStoreNameD = useCallback((v: string) => { setStoreName(v); markDirty(); }, [markDirty]);
+  const setDescriptionD = useCallback((v: string) => { setDescription(v); markDirty(); }, [markDirty]);
+  const setCategoryD = useCallback((v: string) => { setCategory(v); markDirty(); }, [markDirty]);
+  const setTagD = useCallback((v: ReceiptTag) => { setTag(v); markDirty(); }, [markDirty]);
+  const setImageDataD = useCallback((v: string | undefined) => { setImageData(v); if (v) markDirty(); }, [markDirty]);
 
   return {
-    title, setTitle,
-    storeName, setStoreName,
-    description, setDescription,
-    category, setCategory,
-    tag, setTag,
+    title, setTitle: setTitleD,
+    storeName, setStoreName: setStoreNameD,
+    description, setDescription: setDescriptionD,
+    category, setCategory: setCategoryD,
+    tag, setTag: setTagD,
     date, setDate,
     items,
-    imageData, setImageData,
+    imageData, setImageData: setImageDataD,
     project, setProject,
     reimbursementNote, setReimbursementNote,
     vatEnabled, setVatEnabled,
@@ -296,6 +339,7 @@ export function useReceiptForm({ profile, onSaved, duplicateData, editData }: Us
     scanDocType,
     fileRef, titleRef,
     categories, totalAmount, vatAmount, grandTotal, isLowConfidence,
+    saving,
     handleImageUpload, addItem, removeItem, updateItem, handleScan, handleSubmit,
   };
 }

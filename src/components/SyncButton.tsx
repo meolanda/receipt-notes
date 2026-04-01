@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw } from "lucide-react";
-import { isGoogleConnected, getGoogleSettings, syncReceiptToGoogle } from "@/lib/google-api";
+import { RefreshCw, AlertTriangle } from "lucide-react";
+import { isGoogleConnected, isTokenExpired, getGoogleSettings, syncReceiptToGoogle } from "@/lib/google-api";
 import type { Receipt } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
@@ -16,6 +16,10 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
   const [statusText, setStatusText] = useState("");
 
   const handleSync = async () => {
+    if (isTokenExpired()) {
+      toast.error("Token หมดอายุแล้ว กรุณาเชื่อมต่อ Google Account ใหม่ที่แท็บตั้งค่า");
+      return;
+    }
     if (!isGoogleConnected()) {
       toast.error("กรุณาเชื่อมต่อ Google Account ก่อน (ไปที่แท็บตั้งค่า)");
       return;
@@ -59,8 +63,16 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
 
   if (receipts.length === 0) return null;
 
+  const tokenExpired = isTokenExpired();
+
   return (
     <div className="space-y-2">
+      {tokenExpired && (
+        <div className="flex items-center gap-2 p-2 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          Token หมดอายุแล้ว — ไปที่ตั้งค่า &gt; เชื่อมต่อ Google Account ใหม่
+        </div>
+      )}
       <Button
         onClick={handleSync}
         disabled={syncing}
