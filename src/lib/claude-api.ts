@@ -1,6 +1,6 @@
 const CLAUDE_SETTINGS_KEY = "receipt-claude-settings";
 
-export type ClaudeModel = "auto" | "haiku" | "sonnet";
+export type ClaudeModel = "flash25" | "flash20";
 
 export type DocumentType = "receipt" | "quotation" | "tax_invoice" | "invoice" | "bank_slip" | "market_bill" | "other";
 export type Confidence = "high" | "medium" | "low";
@@ -26,15 +26,15 @@ export interface ScanResult {
   vat: number | null;
   total: number | null;
   notes: string | null;
-  modelUsed: "Haiku" | "Sonnet";
+  modelUsed: string;
 }
 
 export function getClaudeSettings(): ClaudeSettings {
   try {
     const data = localStorage.getItem(CLAUDE_SETTINGS_KEY);
-    return data ? JSON.parse(data) : { apiKey: "", modelPreference: "auto" };
+    return data ? JSON.parse(data) : { apiKey: "", modelPreference: "flash25" };
   } catch {
-    return { apiKey: "", modelPreference: "auto" };
+    return { apiKey: "", modelPreference: "flash25" };
   }
 }
 
@@ -71,12 +71,10 @@ const PROMPT = `วิเคราะห์เอกสารนี้และ�
 - items: ดึงเฉพาะรายการจากตารางข้อมูลหลัก [{name, quantity, unit_price, total}]
   * ห้ามนำ footnotes, เงื่อนไข, ข้อมูลพนักงานขาย มาเป็น item
   * ถ้ารายการมีรายละเอียดย่อย (เช่น รุ่น, สเปค, หมายเหตุใต้รายการ) ให้รวมเป็นชื่อรายการเดียว
-  * ถ้ารายการมีข้อมูล BTU/สเปค/ไฟ ให้จัดรูปแบบชื่อเป็น: "[รายการ] [ยี่ห้อ] [BTU]BTU [ไฟ]"
-    ตัวอย่าง: "Condensing TTKB48KD TRANE 48000BTU 380V"
 - subtotal: ยอดก่อน VAT
 - vat: VAT 7% (ถ้ามี)
 - total: ยอดรวมสุทธิ
-- notes: รวมข้อมูลเหล่านี้ไว้ใน notes (ถ้ามี): เงื่อนไขการชำระ, ชื่อพนักงานขาย/ผู้ติดต่อ, เงื่อนไขส่วนลด, เงื่อนไขการจัดส่ง, ข้อความโปรโมชัน
+- notes: รวมข้อมูลเหล่านี้ไว้ใน notes (ถ้ามี): เงื่อนไขการชำระ, ชื่อพนักงานขาย/ผู้ติดต่อ, เงื่อนไขส่วนลด
 
 [bank_slip]
 - bank: ชื่อธนาคารหรือช่องทาง (เช่น กสิกรไทย, SCB, PromptPay)
@@ -121,54 +119,41 @@ const PROMPT = `วิเคราะห์เอกสารนี้และ�
 
 ถ้า field ไหนไม่มีข้อมูลให้ใส่ null`;
 
-async function callClaude(
-  apiKey: string,
-  model: string,
-  imageBase64: string
-): Promise<any> {
+async function callGemini(apiKey: string, model: string, imageBase64: string): Promise<any> {
   const match = imageBase64.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!match) throw new Error("Invalid image data");
-  
-  const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+  const mimeType = match[1];
   const data = match[2];
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data },
-            },
-            { type: "text", text: PROMPT },
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mimeType, data } },
+            { text: PROMPT },
           ],
-        },
-      ],
-    }),
-  });
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 2048 },
+      }),
+    }
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Claude API error (${res.status}): ${err.error?.message || res.statusText}`);
+    throw new Error(`Gemini API error (${res.status}): ${err.error?.message || res.statusText}`);
   }
 
   const result = await res.json();
-  const text = result.content?.[0]?.text || "";
-  
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("ไม่สามารถอ่าน JSON จากคำตอบ AI ได้");
-  
+
   return JSON.parse(jsonMatch[0]);
 }
 
@@ -181,41 +166,33 @@ function isIncomplete(data: any): boolean {
 
 export async function scanReceipt(imageBase64: string): Promise<ScanResult> {
   const settings = getClaudeSettings();
-  if (!settings.apiKey) throw new Error("กรุณากรอก Claude API Key ก่อน (ไปที่แท็บตั้งค่า)");
+  if (!settings.apiKey) throw new Error("กรุณากรอก Gemini API Key ก่อน (ไปที่แท็บตั้งค่า)");
 
-  const haikuModel = "claude-haiku-4-5-20251001";
-  const sonnetModel = "claude-sonnet-4-20250514";
+  const flash25 = "gemini-2.5-flash";
+  const flash20 = "gemini-2.0-flash";
 
-  // Complex document types that need Sonnet for accurate Thai text extraction
-  const complexTypes: DocumentType[] = ["quotation", "invoice", "tax_invoice"];
-
-  let modelUsed: "Haiku" | "Sonnet";
+  let modelUsed: string;
   let data: any;
 
-  if (settings.modelPreference === "sonnet") {
-    data = await callClaude(settings.apiKey, sonnetModel, imageBase64);
-    modelUsed = "Sonnet";
-  } else if (settings.modelPreference === "haiku") {
-    data = await callClaude(settings.apiKey, haikuModel, imageBase64);
-    modelUsed = "Haiku";
+  if (settings.modelPreference === "flash20") {
+    data = await callGemini(settings.apiKey, flash20, imageBase64);
+    modelUsed = "Gemini 2.0 Flash";
   } else {
-    // Auto mode: first pass with Haiku to detect document type
-    data = await callClaude(settings.apiKey, haikuModel, imageBase64);
-    modelUsed = "Haiku";
+    // Default: 2.5 Flash
+    data = await callGemini(settings.apiKey, flash25, imageBase64);
+    modelUsed = "Gemini 2.5 Flash";
 
-    // Re-scan with Sonnet if complex type or incomplete data
-    if (complexTypes.includes(data.document_type) || isIncomplete(data)) {
-      data = await callClaude(settings.apiKey, sonnetModel, imageBase64);
-      modelUsed = "Sonnet";
+    // Retry with 2.0 if incomplete (fallback)
+    if (isIncomplete(data)) {
+      data = await callGemini(settings.apiKey, flash20, imageBase64);
+      modelUsed = "Gemini 2.0 Flash";
     }
   }
 
-  // For bank_slip, map amount to total if total is missing
   const totalValue = data.document_type === "bank_slip"
     ? Number(data.amount) || Number(data.total) || 0
     : Number(data.total) || 0;
 
-  // For market_bill, force confidence to low
   const confidence: Confidence = data.document_type === "market_bill"
     ? "low"
     : (data.confidence || "medium");
