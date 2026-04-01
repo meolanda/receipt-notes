@@ -151,10 +151,12 @@ async function callGemini(apiKey: string, model: string, imageBase64: string): P
   const result = await res.json();
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // รองรับทั้ง raw JSON และ markdown code block (```json ... ```)
+  const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  const jsonMatch = codeBlockMatch ? codeBlockMatch[1] : text.match(/\{[\s\S]*\}/)?.[0];
   if (!jsonMatch) throw new Error("ไม่สามารถอ่าน JSON จากคำตอบ AI ได้");
 
-  return JSON.parse(jsonMatch[0]);
+  return JSON.parse(jsonMatch);
 }
 
 function isIncomplete(data: any): boolean {
