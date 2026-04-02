@@ -29,7 +29,7 @@ export default function GoogleSettings() {
 
   const handleCleanCorrupted = () => {
     const all = getReceipts();
-    const corrupted = all.filter(r => r.grandTotal === 0 && r.totalAmount === 0);
+    const corrupted = all.filter(r => r.grandTotal === 0);
     if (corrupted.length === 0) {
       toast.info("ไม่พบข้อมูลเสียหาย");
       return;
