@@ -283,6 +283,7 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
         // Server sync (Vercel + Apps Script) — ไม่ต้อง login Google
         if (isServerSyncAvailable()) {
           syncReceiptToServer(newReceipt).then((imageUrl) => {
+            updateReceipt(newReceipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
             if (imageUrl) toast.success("Sync + อัปโหลดรูปไป Google Drive ✅");
             else toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
           }).catch((err) => {
