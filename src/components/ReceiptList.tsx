@@ -6,6 +6,7 @@ import FilterBar, { type SortKey } from "@/components/FilterBar";
 import ReceiptCard from "@/components/ReceiptCard";
 import ReceiptEmptyState from "@/components/ReceiptEmptyState";
 import { type Receipt, type Profile, deleteReceipt, downloadCSV } from "@/lib/receipt-store";
+import { isServerSyncAvailable, deleteReceiptFromServer } from "@/lib/server-sync";
 import { toast } from "sonner";
 
 interface ReceiptListProps {
@@ -61,6 +62,9 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
     deleteReceipt(id);
     toast.success("ลบใบเสร็จแล้ว");
     onChanged();
+    if (isServerSyncAvailable()) {
+      deleteReceiptFromServer(id).catch((err) => console.error("Delete sync error:", err));
+    }
   };
 
   return (

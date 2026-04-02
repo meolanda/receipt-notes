@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
-import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
+import { isServerSyncAvailable, syncReceiptToServer, updateReceiptOnServer } from "@/lib/server-sync";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
@@ -269,8 +269,13 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
       };
 
       if (editData) {
-        updateReceipt(editData.id, receiptData);
+        const updated = updateReceipt(editData.id, { ...receiptData, synced: false });
         toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
+        if (updated && isServerSyncAvailable()) {
+          updateReceiptOnServer(updated).catch((err) => {
+            console.error("Update sync error:", err);
+          });
+        }
       } else {
         const newReceipt = saveReceipt(receiptData);
         toast.success("บันทึกใบเสร็จเรียบร้อย!");

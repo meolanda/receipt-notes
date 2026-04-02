@@ -42,10 +42,11 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
     // dedup: ถ้ามี title+date+profile+grandTotal ตรงกันแล้ว ข้ามไป
     const isDuplicate = existing.some(
       (r) =>
-        r.title === row.title &&
-        r.date === row.date &&
-        r.profile === row.profile &&
-        Math.abs(r.grandTotal - (Number(row.grandTotal) || 0)) < 0.01
+        (row.id && r.id === row.id) ||
+        (r.title === row.title &&
+          r.date === row.date &&
+          r.profile === row.profile &&
+          Math.abs(r.grandTotal - (Number(row.grandTotal) || 0)) < 0.01)
     );
 
     if (isDuplicate) {
@@ -79,34 +80,43 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
   return { added, skipped };
 }
 
-export async function syncReceiptToServer(receipt: Receipt): Promise<string | undefined> {
+function extractImage(receipt: Receipt) {
   let imageBase64: string | undefined;
   let imageExt: string | undefined;
-
   if (receipt.imageData) {
     const match = receipt.imageData.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (match) {
-      imageExt = match[1];
-      imageBase64 = match[2];
-    }
+    if (match) { imageExt = match[1]; imageBase64 = match[2]; }
   }
-
-  // Strip imageData from receipt to avoid sending image twice (once as imageBase64, once inside receipt)
   const { imageData: _stripped, ...receiptWithoutImage } = receipt;
+  return { receiptWithoutImage, imageBase64, imageExt };
+}
 
+async function callSync(body: object): Promise<any> {
   const res = await fetch("/api/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ receipt: receiptWithoutImage, imageBase64, imageExt }),
+    body: JSON.stringify(body),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Sync error: ${res.status}`);
   }
-
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+  return data;
+}
 
+export async function syncReceiptToServer(receipt: Receipt): Promise<string | undefined> {
+  const { receiptWithoutImage, imageBase64, imageExt } = extractImage(receipt);
+  const data = await callSync({ receipt: receiptWithoutImage, imageBase64, imageExt });
   return data.imageUrl || undefined;
+}
+
+export async function updateReceiptOnServer(receipt: Receipt): Promise<void> {
+  const { receiptWithoutImage, imageBase64, imageExt } = extractImage(receipt);
+  await callSync({ action: "update", receipt: receiptWithoutImage, imageBase64, imageExt });
+}
+
+export async function deleteReceiptFromServer(id: string): Promise<void> {
+  await callSync({ action: "delete", id });
 }
