@@ -90,10 +90,13 @@ export async function syncReceiptToServer(receipt: Receipt): Promise<string | un
     }
   }
 
+  // Strip imageData from receipt to avoid sending image twice (once as imageBase64, once inside receipt)
+  const { imageData: _stripped, ...receiptWithoutImage } = receipt;
+
   const res = await fetch("/api/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ receipt, imageBase64, imageExt }),
+    body: JSON.stringify({ receipt: receiptWithoutImage, imageBase64, imageExt }),
   });
 
   if (!res.ok) {
