@@ -27,13 +27,13 @@ const Index = () => {
       setTab("settings");
       return;
     }
-    // Auto-restore on first open if localStorage is empty and server sync is available
-    if (isServerSyncAvailable() && getReceipts().length === 0) {
+    // Auto-sync from Sheets every time app opens (silent background refresh)
+    if (isServerSyncAvailable()) {
       restoreFromServer()
         .then(({ added }) => {
           if (added > 0) {
             setReceipts(getReceipts());
-            toast.success(`โหลดข้อมูล ${added} รายการจาก Google Sheets ✅`);
+            toast.success(`มีข้อมูลใหม่ ${added} รายการจากเครื่องอื่น ✅`);
           }
         })
         .catch(() => {/* silent fail */});

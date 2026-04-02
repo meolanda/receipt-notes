@@ -71,6 +71,7 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
       project: row.project || "",
       reimbursementNote: row.reimbursementNote || "",
       imageUrl: row.imageUrl || undefined,
+      synced: true,
     });
     added++;
   }
