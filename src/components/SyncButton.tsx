@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { isGoogleConnected, isTokenExpired, getGoogleSettings, syncReceiptToGoogle } from "@/lib/google-api";
 import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
-import type { Receipt } from "@/lib/receipt-store";
+import { updateReceipt, type Receipt } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 interface SyncButtonProps {
@@ -39,22 +39,31 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
     setSyncing(true);
     setProgress(0);
 
+    const pending = useServer ? receipts.filter((r) => !r.synced) : receipts;
+
     let success = 0;
     let errors = 0;
-    const total = receipts.length;
+    const total = pending.length;
+
+    if (total === 0) {
+      setSyncing(false);
+      toast.info("ข้อมูลทั้งหมด sync แล้ว ไม่มีรายการใหม่");
+      return;
+    }
 
     for (let i = 0; i < total; i++) {
       setStatusText(`กำลัง sync ${i + 1}/${total}...`);
       setProgress(((i + 1) / total) * 100);
       try {
         if (useServer) {
-          await syncReceiptToServer(receipts[i]);
+          const imageUrl = await syncReceiptToServer(pending[i]);
+          updateReceipt(pending[i].id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
         } else {
-          await syncReceiptToGoogle(receipts[i]);
+          await syncReceiptToGoogle(pending[i]);
         }
         success++;
       } catch (err) {
-        console.error(`Sync error for receipt ${receipts[i].id}:`, err);
+        console.error(`Sync error for receipt ${pending[i].id}:`, err);
         errors++;
       }
     }
@@ -70,9 +79,12 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
     }
   };
 
+  const useServer = isServerSyncAvailable();
+  const pendingCount = useServer ? receipts.filter((r) => !r.synced).length : receipts.length;
+
   if (receipts.length === 0) return null;
 
-  const tokenExpired = !isServerSyncAvailable() && isTokenExpired();
+  const tokenExpired = !useServer && isTokenExpired();
 
   return (
     <div className="space-y-2">
@@ -90,7 +102,7 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
         className="w-full"
       >
         <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
-        {syncing ? statusText : `Sync ไปยัง Google (${receipts.length} รายการ)`}
+        {syncing ? statusText : pendingCount > 0 ? `Sync ไปยัง Google (${pendingCount} รายการใหม่)` : "Sync ไปยัง Google ✅"}
       </Button>
       {syncing && <Progress value={progress} className="h-2" />}
     </div>

@@ -29,6 +29,7 @@ export interface Receipt {
   imageUrl?: string;
   documentType?: DocumentTypeValue;
   createdAt: string;
+  synced?: boolean;
 }
 
 const STORAGE_KEY = "receipt-tracker-data";

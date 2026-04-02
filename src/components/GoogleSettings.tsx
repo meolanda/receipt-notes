@@ -87,137 +87,97 @@ export default function GoogleSettings() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Connection Status */}
-        <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
-          <span className="text-sm font-medium">สถานะการเชื่อมต่อ</span>
-          {connected ? (
-            <Badge className="bg-green-100 text-green-700 border-green-200">
-              ✅ เชื่อมต่อแล้ว {minutesLeft !== null && `(${minutesLeft} นาที)`}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-muted-foreground">
-              ❌ ยังไม่เชื่อมต่อ
-            </Badge>
-          )}
-        </div>
-
-        {/* Token Expired Warning */}
-        {tokenExpired && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">Token หมดอายุแล้ว</p>
-              <p className="text-xs mt-0.5">Sync จะล้มเหลว กรุณากดเชื่อมต่อ Google Account ใหม่อีกครั้ง</p>
+        {serverSync ? (
+          /* === Vercel mode: ไม่ต้อง OAuth === */
+          <>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-200">
+              <span className="text-sm font-medium">สถานะ</span>
+              <Badge className="bg-green-100 text-green-700 border-green-200">
+                ✅ เชื่อมต่อผ่าน Server แล้ว
+              </Badge>
             </div>
-          </div>
+
+            {/* Restore from Sheets */}
+            <div className="rounded-lg border border-border p-3 space-y-2">
+              <p className="text-sm font-medium">โหลดข้อมูลจาก Google Sheets</p>
+              <p className="text-xs text-muted-foreground">ใช้เมื่อเปิดแอปบนเครื่องใหม่ หรือข้อมูลในเครื่องหาย — จะดึงรายการจาก Sheets มาเพิ่มโดยไม่ลบข้อมูลเดิม</p>
+              <Button onClick={handleRestore} disabled={restoring} variant="outline" className="w-full">
+                {restoring
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />กำลังโหลด...</>
+                  : <><Download className="h-4 w-4 mr-2" />โหลดข้อมูลจาก Google Sheets</>
+                }
+              </Button>
+            </div>
+
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
+              <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>ข้อมูลถูก sync ผ่าน Server อัตโนมัติ ไม่ต้องตั้งค่า OAuth</span>
+            </div>
+          </>
+        ) : (
+          /* === Localhost mode: ต้อง OAuth === */
+          <>
+            {/* Connection Status */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+              <span className="text-sm font-medium">สถานะการเชื่อมต่อ</span>
+              {connected ? (
+                <Badge className="bg-green-100 text-green-700 border-green-200">
+                  ✅ เชื่อมต่อแล้ว {minutesLeft !== null && `(${minutesLeft} นาที)`}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">
+                  ❌ ยังไม่เชื่อมต่อ
+                </Badge>
+              )}
+            </div>
+
+            {tokenExpired && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">Token หมดอายุแล้ว</p>
+                  <p className="text-xs mt-0.5">กรุณากดเชื่อมต่อ Google Account ใหม่อีกครั้ง</p>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="clientId">Google OAuth Client ID *</Label>
+              <Input id="clientId" placeholder="xxxx.apps.googleusercontent.com" value={settings.clientId}
+                onChange={(e) => setSettings({ ...settings, clientId: e.target.value })} className="mt-1 text-xs" />
+            </div>
+            <div>
+              <Label htmlFor="spreadsheetId">Google Spreadsheet ID *</Label>
+              <Input id="spreadsheetId" placeholder="ค่า ID จาก URL ของ Google Sheet" value={settings.spreadsheetId}
+                onChange={(e) => setSettings({ ...settings, spreadsheetId: e.target.value })} className="mt-1 text-xs" />
+            </div>
+            <div>
+              <Label htmlFor="driveFolderId">Google Drive Folder ID</Label>
+              <Input id="driveFolderId" placeholder="ค่า ID ของโฟลเดอร์ใน Google Drive" value={settings.driveFolderId}
+                onChange={(e) => setSettings({ ...settings, driveFolderId: e.target.value })} className="mt-1 text-xs" />
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <Button onClick={handleSave} variant="outline" className="w-full">
+                <Save className="h-4 w-4 mr-1" /> บันทึกการตั้งค่า
+              </Button>
+              {connected ? (
+                <Button onClick={handleDisconnect} variant="destructive" className="w-full">
+                  <Unlink className="h-4 w-4 mr-1" /> ยกเลิกการเชื่อมต่อ
+                </Button>
+              ) : (
+                <Button onClick={handleConnect} className="w-full" disabled={!settings.clientId}>
+                  <Link className="h-4 w-4 mr-1" /> เชื่อมต่อ Google Account
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
+              <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>Client ID และ Folder ID เก็บใน browser (localStorage) บนเครื่องนี้เท่านั้น</span>
+            </div>
+          </>
         )}
-
-        {/* Client ID */}
-        <div>
-          <Label htmlFor="clientId">Google OAuth Client ID *</Label>
-          <Input
-            id="clientId"
-            placeholder="xxxx.apps.googleusercontent.com"
-            value={settings.clientId}
-            onChange={(e) => setSettings({ ...settings, clientId: e.target.value })}
-            className="mt-1 text-xs"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            สร้างได้ที่{" "}
-            <a
-              href="https://console.cloud.google.com/apis/credentials"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary underline"
-            >
-              Google Cloud Console
-            </a>
-          </p>
-        </div>
-
-        {/* Spreadsheet ID */}
-        <div>
-          <Label htmlFor="spreadsheetId">Google Spreadsheet ID *</Label>
-          <Input
-            id="spreadsheetId"
-            placeholder="ค่า ID จาก URL ของ Google Sheet"
-            value={settings.spreadsheetId}
-            onChange={(e) => setSettings({ ...settings, spreadsheetId: e.target.value })}
-            className="mt-1 text-xs"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            ดูจาก URL: docs.google.com/spreadsheets/d/<strong>[ID นี้]</strong>/edit
-          </p>
-        </div>
-
-        {/* Drive Folder ID */}
-        <div>
-          <Label htmlFor="driveFolderId">Google Drive Folder ID</Label>
-          <Input
-            id="driveFolderId"
-            placeholder="ค่า ID ของโฟลเดอร์ใน Google Drive"
-            value={settings.driveFolderId}
-            onChange={(e) => setSettings({ ...settings, driveFolderId: e.target.value })}
-            className="mt-1 text-xs"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            ดูจาก URL: drive.google.com/drive/folders/<strong>[ID นี้]</strong>
-          </p>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex flex-col gap-2 pt-2">
-          <Button onClick={handleSave} variant="outline" className="w-full">
-            <Save className="h-4 w-4 mr-1" /> บันทึกการตั้งค่า
-          </Button>
-
-          {connected ? (
-            <Button onClick={handleDisconnect} variant="destructive" className="w-full">
-              <Unlink className="h-4 w-4 mr-1" /> ยกเลิกการเชื่อมต่อ
-            </Button>
-          ) : (
-            <Button
-              onClick={handleConnect}
-              className="w-full"
-              disabled={!settings.clientId}
-            >
-              <Link className="h-4 w-4 mr-1" /> เชื่อมต่อ Google Account
-            </Button>
-          )}
-        </div>
-
-        {/* Restore from Sheets */}
-        {serverSync && (
-          <div className="rounded-lg border border-border p-3 space-y-2">
-            <p className="text-sm font-medium">โหลดข้อมูลจาก Google Sheets</p>
-            <p className="text-xs text-muted-foreground">ใช้เมื่อเปิดแอปบนเครื่องใหม่ หรือข้อมูลในเครื่องหาย — จะดึงรายการจาก Sheets มาเพิ่มโดยไม่ลบข้อมูลเดิม</p>
-            <Button onClick={handleRestore} disabled={restoring} variant="outline" className="w-full">
-              {restoring
-                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />กำลังโหลด...</>
-                : <><Download className="h-4 w-4 mr-2" />โหลดข้อมูลจาก Google Sheets</>
-              }
-            </Button>
-          </div>
-        )}
-
-        {/* Security Note */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
-          <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>Client ID และ Folder ID เก็บใน browser (localStorage) บนเครื่องนี้เท่านั้น ไม่มีการส่งข้อมูลไปที่อื่น</span>
-        </div>
-
-        {/* Instructions */}
-        <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground space-y-1">
-          <p className="font-medium text-foreground">📋 วิธีตั้งค่า:</p>
-          <ol className="list-decimal list-inside space-y-0.5">
-            <li>ไปที่ Google Cloud Console สร้าง OAuth Client ID (Web application)</li>
-            <li>เพิ่ม Authorized redirect URI: <code className="text-primary">{window.location.origin}</code></li>
-            <li>เปิดใช้ Google Sheets API และ Google Drive API</li>
-            <li>สร้าง Google Sheet ใหม่ แล้วคัดลอก Spreadsheet ID</li>
-            <li>สร้างโฟลเดอร์ใน Google Drive แล้วคัดลอก Folder ID</li>
-            <li>กดปุ่ม "เชื่อมต่อ Google Account"</li>
-          </ol>
-        </div>
       </CardContent>
     </Card>
   );
