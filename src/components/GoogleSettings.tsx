@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Link, Unlink, Save, AlertTriangle, Shield, Download, Loader2 } from "lucide-react";
+import { Settings, Link, Unlink, Save, AlertTriangle, Shield, Download, Loader2, Trash2 } from "lucide-react";
 import {
   getGoogleSettings,
   saveGoogleSettings,
@@ -16,6 +16,7 @@ import {
   type GoogleSettings as GoogleSettingsType,
 } from "@/lib/google-api";
 import { isServerSyncAvailable, restoreFromServer } from "@/lib/server-sync";
+import { getReceipts, deleteReceipt } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 export default function GoogleSettings() {
@@ -25,6 +26,19 @@ export default function GoogleSettings() {
   const [minutesLeft, setMinutesLeft] = useState(getTokenMinutesLeft);
   const [restoring, setRestoring] = useState(false);
   const serverSync = isServerSyncAvailable();
+
+  const handleCleanCorrupted = () => {
+    const all = getReceipts();
+    const corrupted = all.filter(r => r.grandTotal === 0 && r.totalAmount === 0);
+    if (corrupted.length === 0) {
+      toast.info("ไม่พบข้อมูลเสียหาย");
+      return;
+    }
+    if (!window.confirm(`พบ ${corrupted.length} รายการที่ราคา ฿0.00 ต้องการลบออกไหม?`)) return;
+    corrupted.forEach(r => deleteReceipt(r.id));
+    toast.success(`ลบข้อมูลเสียหาย ${corrupted.length} รายการแล้ว`);
+    window.location.reload();
+  };
 
   const handleRestore = async () => {
     setRestoring(true);
@@ -106,6 +120,15 @@ export default function GoogleSettings() {
                   ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />กำลังโหลด...</>
                   : <><Download className="h-4 w-4 mr-2" />โหลดข้อมูลจาก Google Sheets</>
                 }
+              </Button>
+            </div>
+
+            {/* ล้างข้อมูลเสียหาย */}
+            <div className="rounded-lg border border-red-200 p-3 space-y-2">
+              <p className="text-sm font-medium text-red-700">ล้างข้อมูลเสียหาย</p>
+              <p className="text-xs text-muted-foreground">ลบรายการที่ราคา ฿0.00 ออกจากเครื่องนี้ (ข้อมูลใน Google Sheets ยังอยู่)</p>
+              <Button onClick={handleCleanCorrupted} variant="outline" className="w-full border-red-200 text-red-700 hover:bg-red-50">
+                <Trash2 className="h-4 w-4 mr-2" />ล้างข้อมูลเสียหาย (฿0.00)
               </Button>
             </div>
 
