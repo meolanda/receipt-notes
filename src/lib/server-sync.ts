@@ -1,5 +1,5 @@
 import type { Receipt } from "./receipt-store";
-import { getReceipts, saveReceipt } from "./receipt-store";
+import { getReceipts, saveReceipt, getDeletedIds } from "./receipt-store";
 
 /** true ถ้าไม่ได้รันบน localhost (= deploy บน Vercel) */
 export function isServerSyncAvailable(): boolean {
@@ -34,12 +34,18 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
 
   const rows: any[] = data.receipts || [];
   const existing = getReceipts();
+  const deletedIds = getDeletedIds();
 
   let added = 0;
   let skipped = 0;
 
   for (const row of rows) {
-    // dedup: ถ้ามี title+date+profile+grandTotal ตรงกันแล้ว ข้ามไป
+    // ข้าม id ที่เคยลบไปแล้วในเครื่องนี้
+    if (row.id && deletedIds.includes(row.id)) {
+      skipped++;
+      continue;
+    }
+
     const isDuplicate = existing.some(
       (r) =>
         (row.id && r.id === row.id) ||

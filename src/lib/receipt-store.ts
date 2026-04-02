@@ -119,9 +119,23 @@ export function updateReceipt(id: string, data: Partial<Omit<Receipt, "id" | "cr
   return receipts[idx];
 }
 
+const DELETED_IDS_KEY = "receipt-deleted-ids";
+
+export function getDeletedIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(DELETED_IDS_KEY) || "[]");
+  } catch { return []; }
+}
+
 export function deleteReceipt(id: string): void {
   const receipts = getReceipts().filter((r) => r.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
+  // จำไว้ว่า id นี้ถูกลบแล้ว เพื่อป้องกัน restore กลับมา
+  const deleted = getDeletedIds();
+  if (!deleted.includes(id)) {
+    deleted.push(id);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(deleted));
+  }
 }
 
 export function exportToCSV(receipts: Receipt[]): string {
