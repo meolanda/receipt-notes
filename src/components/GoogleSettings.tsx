@@ -15,8 +15,8 @@ import {
   clearGoogleToken,
   type GoogleSettings as GoogleSettingsType,
 } from "@/lib/google-api";
-import { isServerSyncAvailable, restoreFromServer } from "@/lib/server-sync";
-import { getReceipts, removeReceiptLocal, clearDeletedIds, getDeletedIds } from "@/lib/receipt-store";
+import { isServerSyncAvailable, restoreFromServer, deleteReceiptFromServer } from "@/lib/server-sync";
+import { getReceipts, removeReceiptLocal } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 export default function GoogleSettings() {
@@ -27,7 +27,7 @@ export default function GoogleSettings() {
   const [restoring, setRestoring] = useState(false);
   const serverSync = isServerSyncAvailable();
 
-  const handleCleanCorrupted = () => {
+  const handleCleanCorrupted = async () => {
     const all = getReceipts();
     const corrupted = all.filter(r => r.grandTotal === 0);
     if (corrupted.length === 0) {
@@ -35,18 +35,12 @@ export default function GoogleSettings() {
       return;
     }
     if (!window.confirm(`พบ ${corrupted.length} รายการที่ราคา ฿0.00 ต้องการลบออกไหม?`)) return;
-    // ใช้ removeReceiptLocal แทน deleteReceipt เพื่อไม่บล็อก restore จาก Sheets
+    // ลบออกจาก localStorage
     corrupted.forEach(r => removeReceiptLocal(r.id));
-    toast.success(`ลบข้อมูลเสียหาย ${corrupted.length} รายการแล้ว`);
+    // ลบออกจาก Sheets ด้วย (mark "ลบ") เพื่อไม่ให้ restore กลับมา
+    await Promise.allSettled(corrupted.map(r => deleteReceiptFromServer(r.id)));
+    toast.success(`ลบข้อมูลเสียหาย ${corrupted.length} รายการแล้ว (ทั้งเครื่องและ Sheets)`);
     window.location.reload();
-  };
-
-  const handleClearDeletedIds = () => {
-    const count = getDeletedIds().length;
-    if (count === 0) { toast.info("ไม่มีรายการที่ถูกบล็อก"); return; }
-    if (!window.confirm(`รีเซ็ตรายการบล็อก ${count} รายการ? หลังจากนี้กด "โหลดจาก Sheets" จะดึงข้อมูลกลับมาได้`)) return;
-    clearDeletedIds();
-    toast.success(`รีเซ็ตแล้ว — กด "โหลดข้อมูลจาก Google Sheets" เพื่อดึงข้อมูลกลับ`);
   };
 
   const handleRestore = async () => {
@@ -138,9 +132,6 @@ export default function GoogleSettings() {
               <p className="text-xs text-muted-foreground">ลบรายการที่ราคา ฿0.00 ออกจากเครื่องนี้ (ข้อมูลใน Google Sheets ยังอยู่)</p>
               <Button onClick={handleCleanCorrupted} variant="outline" className="w-full border-red-200 text-red-700 hover:bg-red-50">
                 <Trash2 className="h-4 w-4 mr-2" />ล้างข้อมูลเสียหาย (฿0.00)
-              </Button>
-              <Button onClick={handleClearDeletedIds} variant="outline" className="w-full border-orange-200 text-orange-700 hover:bg-orange-50 text-xs">
-                <Trash2 className="h-3.5 w-3.5 mr-2" />รีเซ็ตรายการบล็อก (ดึงข้อมูลที่เคยล้างกลับได้)
               </Button>
             </div>
 
