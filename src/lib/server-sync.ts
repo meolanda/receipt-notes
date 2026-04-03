@@ -3,7 +3,10 @@ import { getReceipts, saveReceipt, getDeletedIds } from "./receipt-store";
 
 /** true ถ้าไม่ได้รันบน localhost (= deploy บน Vercel) */
 export function isServerSyncAvailable(): boolean {
-  return typeof window !== "undefined" && !window.location.hostname.includes("localhost");
+  if (typeof window === "undefined") return false;
+  const { hostname, protocol } = window.location;
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0";
+  return !isLocal && protocol === "https:";
 }
 
 /** ตรวจสอบว่า Vercel ตั้งค่า env vars ไว้แล้วหรือยัง */
