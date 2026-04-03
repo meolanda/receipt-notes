@@ -36,12 +36,15 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
   const existing = getReceipts();
   const deletedIds = getDeletedIds();
 
+  console.log("[restoreFromServer] rows from server:", rows.length, "existing local:", existing.length, "deletedIds:", deletedIds);
+
   let added = 0;
   let skipped = 0;
 
   for (const row of rows) {
     // ข้าม id ที่เคยลบไปแล้วในเครื่องนี้
     if (row.id && deletedIds.includes(row.id)) {
+      console.log("[restoreFromServer] skipped (in deletedIds):", row.id, row.title);
       skipped++;
       continue;
     }
@@ -56,6 +59,7 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
     );
 
     if (isDuplicate) {
+      console.log("[restoreFromServer] skipped (duplicate):", row.id, row.title);
       skipped++;
       continue;
     }
@@ -73,7 +77,7 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
       vatAmount: Number(row.vatAmount) || 0,
       grandTotal: Number(row.grandTotal) || 0,
       items: Array.isArray(row.items)
-        ? row.items.map((i: any) => ({ name: i.name || "", quantity: Number(i.qty) || 1, price: Number(i.price) || 0 }))
+        ? row.items.map((i: any) => ({ name: i.name || "", quantity: Number(i.qty ?? i.quantity) || 1, price: Number(i.price) || 0 }))
         : [],
       project: row.project || "",
       reimbursementNote: row.reimbursementNote || "",

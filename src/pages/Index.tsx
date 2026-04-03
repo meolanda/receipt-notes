@@ -30,13 +30,16 @@ const Index = () => {
     // Auto-sync from Sheets every time app opens (silent background refresh)
     if (isServerSyncAvailable()) {
       restoreFromServer()
-        .then(({ added }) => {
+        .then(({ added, skipped }) => {
+          console.log("[auto-restore] added:", added, "skipped:", skipped);
           if (added > 0) {
             setReceipts(getReceipts());
             toast.success(`มีข้อมูลใหม่ ${added} รายการจากเครื่องอื่น ✅`);
           }
         })
-        .catch(() => {/* silent fail */});
+        .catch((err) => {
+          console.error("[auto-restore] failed:", err);
+        });
     }
   }, []);
 
