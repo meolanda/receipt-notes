@@ -31,7 +31,8 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
   const [title, setTitle] = useState(prefill?.title || "");
   const [storeName, setStoreName] = useState(prefill?.storeName || "");
   const [description, setDescription] = useState(prefill?.description || "");
-  const [category, setCategory] = useState(prefill?.category || "");
+  const defaultCategory = prefill?.category || getCategoriesForProfile(profile)[0] || "";
+  const [category, setCategory] = useState(defaultCategory);
   const [tag, setTag] = useState<ReceiptTag>(prefill?.tag || "ส่วนตัว");
   const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<ReceiptItem[]>(
