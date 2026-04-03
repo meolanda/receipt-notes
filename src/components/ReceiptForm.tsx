@@ -109,7 +109,7 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                 <Label htmlFor="category">หมวดหมู่ *</Label>
                 <Select value={form.category} onValueChange={form.setCategory}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="เลือก..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper">
                     {form.categories.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
