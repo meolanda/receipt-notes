@@ -138,6 +138,16 @@ export function deleteReceipt(id: string): void {
   }
 }
 
+// ลบออกจาก localStorage เฉยๆ โดยไม่บล็อก restore (ใช้สำหรับล้างข้อมูลเสียหาย)
+export function removeReceiptLocal(id: string): void {
+  const receipts = getReceipts().filter((r) => r.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
+}
+
+export function clearDeletedIds(): void {
+  localStorage.removeItem(DELETED_IDS_KEY);
+}
+
 export function exportToCSV(receipts: Receipt[]): string {
   const headers = [
     "วันที่", "หัวข้อ", "ร้านค้า/ผู้รับเงิน", "รายละเอียด", "หมวดหมู่", "แท็ก", "โปรไฟล์",
