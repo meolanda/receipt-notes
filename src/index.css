@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 24 10% 15%;
+
+    --card: 40 30% 96%;
+    --card-foreground: 24 10% 15%;
+
+    --popover: 40 33% 98%;
+    --popover-foreground: 24 10% 15%;
+
+    --primary: 24 80% 50%;
+    --primary-foreground: 40 33% 98%;
+
+    --secondary: 40 25% 91%;
+    --secondary-foreground: 24 10% 25%;
+
+    --muted: 40 20% 93%;
+    --muted-foreground: 24 5% 50%;
+
+    --accent: 160 40% 45%;
+    --accent-foreground: 40 33% 98%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 40 33% 98%;
+
+    --border: 30 15% 88%;
+    --input: 30 15% 88%;
+    --ring: 24 80% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --income: 160 50% 40%;
+    --expense: 0 72% 55%;
+
+    font-family: 'IBM Plex Sans Thai', 'Space Grotesk', sans-serif;
+  }
+
+  .dark {
+    --background: 24 10% 10%;
+    --foreground: 40 30% 92%;
+    --card: 24 10% 14%;
+    --card-foreground: 40 30% 92%;
+    --popover: 24 10% 10%;
+    --popover-foreground: 40 30% 92%;
+    --primary: 24 80% 55%;
+    --primary-foreground: 24 10% 10%;
+    --secondary: 24 10% 20%;
+    --secondary-foreground: 40 30% 92%;
+    --muted: 24 10% 18%;
+    --muted-foreground: 40 10% 55%;
+    --accent: 160 40% 45%;
+    --accent-foreground: 40 33% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 40 33% 98%;
+    --border: 24 10% 22%;
+    --input: 24 10% 22%;
+    --ring: 24 80% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ensure minimum touch target sizes on mobile */
+  @media (max-width: 640px) {
+    button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    input, textarea, select {
+      font-size: 16px !important; /* Prevent iOS zoom on focus */
+    }
+  }
+}
+
+@layer utilities {
+  .receipt-shadow {
+    box-shadow: 0 2px 16px -4px hsl(24 80% 50% / 0.1), 0 1px 4px -2px hsl(24 80% 50% / 0.08);
+  }
+
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

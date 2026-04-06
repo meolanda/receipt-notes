@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(gh repo:*)",
+      "WebFetch(domain:github.com)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 11808 /F)",
+      "Bash(cmd /c \"taskkill /PID 11808 /F\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(cmd /c \"netstat -ano | findstr :8080\")",
+      "Bash(git --version)",
+      "Bash(__NEW_LINE_3515e5eda12cbe3e__ SRC=\"D:/เขียน APP/receipt-notes-main/receipt-notes-main\")",
+      "Bash(DEST=\"D:/เขียน APP/receipt-notes-git\")",
+      "Bash(__NEW_LINE_3515e5eda12cbe3e__ cp:*)",
+      "Bash(cp \"$SRC/src/lib/google-api.ts\" \"$DEST/src/lib/google-api.ts\")",
+      "Bash(cp \"$SRC/src/hooks/useReceiptForm.ts\" \"$DEST/src/hooks/useReceiptForm.ts\")",
+      "WebFetch(domain:receipt-notes.vercel.app)",
+      "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\pages\\\\Index.tsx\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\pages\\\\Index.tsx\")",
+      "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\lib\\\\server-sync.ts\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\lib\\\\server-sync.ts\")",
+      "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\lib\\\\receipt-store.ts\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\lib\\\\receipt-store.ts\")",
+      "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\components\\\\GoogleSettings.tsx\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\components\\\\GoogleSettings.tsx\")",
+      "Bash(node_modules/.bin/tsc --noEmit)"
+    ]
+  }
+}
