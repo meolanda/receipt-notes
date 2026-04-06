@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,23 +24,9 @@ export default function ClaudeSettings() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <Label htmlFor="geminiApiKey">Gemini API Key *</Label>
-          <Input
-            id="geminiApiKey"
-            type="password"
-            placeholder="AIzaSy..."
-            value={settings.apiKey}
-            onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-            className="mt-1 text-xs"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            สร้างได้ที่{" "}
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-              Google AI Studio
-            </a>
-            {" "}— ฟรี ไม่ต้องใส่บัตรเครดิต
-          </p>
+        <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-200">
+          <span className="text-sm font-medium">สถานะ</span>
+          <span className="text-sm font-medium text-green-700">✅ พร้อมใช้งาน</span>
         </div>
 
         <div>
@@ -51,13 +36,10 @@ export default function ClaudeSettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="flash25">⚡ Gemini 2.5 Flash (แนะนำ - ฟรี, แม่นยำ)</SelectItem>
-              <SelectItem value="flash20">🚀 Gemini 2.0 Flash (เร็วกว่า, ฟรี)</SelectItem>
+              <SelectItem value="flash25">⚡ Gemini 2.5 Flash (แนะนำ - แม่นยำ)</SelectItem>
+              <SelectItem value="flash20">🚀 Gemini 2.0 Flash (เร็วกว่า)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground mt-1">
-            ทั้งสองโมเดลใช้ฟรีได้ถึง ~1,500 req/วัน
-          </p>
         </div>
 
         <Button onClick={handleSave} variant="outline" className="w-full">
@@ -66,7 +48,7 @@ export default function ClaudeSettings() {
 
         <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
           <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>API Key เก็บใน browser (localStorage) บนเครื่องนี้เท่านั้น ไม่มีการส่งข้อมูลไปที่อื่น นอกจาก Google AI Studio ตอนสแกน</span>
+          <span>AI สแกนใบเสร็จผ่าน Server — ไม่ต้องใส่ API Key ทุก device ใช้ได้เลย</span>
         </div>
       </CardContent>
     </Card>
