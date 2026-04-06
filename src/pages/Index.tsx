@@ -21,27 +21,37 @@ const Index = () => {
   const [formKey, setFormKey] = useState(0);
   const [formDirty, setFormDirty] = useState(false);
 
+  const syncFromServer = useCallback((silent = false) => {
+    if (!isServerSyncAvailable()) return;
+    restoreFromServer()
+      .then(({ added }) => {
+        if (added > 0) {
+          setReceipts(getReceipts());
+          toast.success(`มีข้อมูลใหม่ ${added} รายการจากเครื่องอื่น ✅`);
+        }
+      })
+      .catch((err) => {
+        console.error("[sync] failed:", err);
+        if (!silent) toast.error("โหลดข้อมูลไม่สำเร็จ: " + err.message);
+      });
+  }, []);
+
   useEffect(() => {
     if (handleOAuthCallback()) {
       toast.success("เชื่อมต่อ Google Account สำเร็จ! ✅");
       setTab("settings");
       return;
     }
-    // Auto-sync from Sheets every time app opens (silent background refresh)
-    if (isServerSyncAvailable()) {
-      restoreFromServer()
-        .then(({ added, skipped }) => {
-          console.log("[auto-restore] added:", added, "skipped:", skipped);
-          if (added > 0) {
-            setReceipts(getReceipts());
-            toast.success(`มีข้อมูลใหม่ ${added} รายการจากเครื่องอื่น ✅`);
-          }
-        })
-        .catch((err) => {
-          console.error("[auto-restore] failed:", err);
-        });
-    }
-  }, []);
+    // sync เมื่อเปิดแอป
+    syncFromServer(true);
+
+    // sync เมื่อกลับมาที่แอป (switch tab / กลับจาก app อื่น)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncFromServer(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [syncFromServer]);
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
