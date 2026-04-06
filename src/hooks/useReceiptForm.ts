@@ -221,7 +221,7 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
     setTitle("");
     setStoreName("");
     setDescription("");
-    setCategory("");
+    setCategory(getCategoriesForProfile(profile)[0] || "");
     setTag("ส่วนตัว");
     setDate(new Date().toISOString().slice(0, 10));
     setItems([{ name: "", quantity: 1, price: 0 }]);

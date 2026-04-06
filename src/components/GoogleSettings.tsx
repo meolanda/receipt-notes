@@ -129,7 +129,7 @@ export default function GoogleSettings() {
             {/* ล้างข้อมูลเสียหาย */}
             <div className="rounded-lg border border-red-200 p-3 space-y-2">
               <p className="text-sm font-medium text-red-700">ล้างข้อมูลเสียหาย</p>
-              <p className="text-xs text-muted-foreground">ลบรายการที่ราคา ฿0.00 ออกจากเครื่องนี้ (ข้อมูลใน Google Sheets ยังอยู่)</p>
+              <p className="text-xs text-muted-foreground">ลบรายการที่ราคา ฿0.00 ออกจากเครื่องนี้และ Google Sheets</p>
               <Button onClick={handleCleanCorrupted} variant="outline" className="w-full border-red-200 text-red-700 hover:bg-red-50">
                 <Trash2 className="h-4 w-4 mr-2" />ล้างข้อมูลเสียหาย (฿0.00)
               </Button>
