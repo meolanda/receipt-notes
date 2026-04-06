@@ -26,12 +26,13 @@ export interface UseReceiptFormProps {
   editData?: Receipt | null;
 }
 
-export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData }: UseReceiptFormProps) {
+export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange, duplicateData, editData }: UseReceiptFormProps) {
   const prefill = editData || duplicateData;
+  const [profile, setProfileState] = useState<Profile>(prefill?.profile || initialProfile);
   const [title, setTitle] = useState(prefill?.title || "");
   const [storeName, setStoreName] = useState(prefill?.storeName || "");
   const [description, setDescription] = useState(prefill?.description || "");
-  const defaultCategory = prefill?.category || getCategoriesForProfile(profile)[0] || "";
+  const defaultCategory = prefill?.category || getCategoriesForProfile(prefill?.profile || initialProfile)[0] || "";
   const [category, setCategory] = useState(defaultCategory);
   const [tag, setTag] = useState<ReceiptTag>(prefill?.tag || "ส่วนตัว");
   const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
@@ -50,6 +51,12 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
   const titleRef = useRef<HTMLInputElement>(null);
 
   const markDirty = useCallback(() => onDirtyChange?.(true), [onDirtyChange]);
+
+  const setProfile = useCallback((p: Profile) => {
+    setProfileState(p);
+    setCategory(getCategoriesForProfile(p)[0] || "");
+    markDirty();
+  }, [markDirty]);
 
   const categories = getCategoriesForProfile(profile);
   const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
@@ -218,10 +225,11 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
   const [saving, setSaving] = useState(false);
 
   const resetForm = useCallback(() => {
+    setProfileState(initialProfile);
     setTitle("");
     setStoreName("");
     setDescription("");
-    setCategory(getCategoriesForProfile(profile)[0] || "");
+    setCategory(getCategoriesForProfile(initialProfile)[0] || "");
     setTag("ส่วนตัว");
     setDate(new Date().toISOString().slice(0, 10));
     setItems([{ name: "", quantity: 1, price: 0 }]);
@@ -320,6 +328,7 @@ export function useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData,
   const setImageDataD = useCallback((v: string | undefined) => { setImageData(v); if (v) markDirty(); }, [markDirty]);
 
   return {
+    profile, setProfile,
     title, setTitle: setTitleD,
     storeName, setStoreName: setStoreNameD,
     description, setDescription: setDescriptionD,

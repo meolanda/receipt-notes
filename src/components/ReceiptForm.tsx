@@ -22,6 +22,7 @@ interface ReceiptFormProps {
 export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
   const form = useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData });
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
+  const isPersonal = form.profile === "personal";
   const isEditing = !!editData;
 
   return (
@@ -90,6 +91,30 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
             )}
           </div>
 
+          {/* Profile picker */}
+          {!editData && (
+            <div className="flex rounded-lg overflow-hidden border border-border">
+              <button
+                type="button"
+                onClick={() => form.setProfile("personal")}
+                className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                  isPersonal ? "bg-orange-500 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                🧑 ส่วนตัว
+              </button>
+              <button
+                type="button"
+                onClick={() => form.setProfile("company")}
+                className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                  !isPersonal ? "bg-blue-500 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                🏢 บริษัท
+              </button>
+            </div>
+          )}
+
           {/* Basic info */}
           <div className="space-y-3">
             <div>
@@ -133,7 +158,7 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
           </div>
 
           {/* Profile-specific fields */}
-          {profile === "company" && (
+          {form.profile === "company" && (
             <div>
               <Label htmlFor="project">โครงการ/ลูกค้า</Label>
               <Input id="project" placeholder="เช่น คอนโด ABC" value={form.project} onChange={(e) => form.setProject(e.target.value)} className="mt-1" />
@@ -196,7 +221,7 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
           </div>
 
           {/* Reimbursement note - company only */}
-          {profile === "company" && (
+          {form.profile === "company" && (
             <div>
               <Label htmlFor="reimburse">หมายเหตุการเบิก</Label>
               <Input id="reimburse" placeholder="เช่น เบิกจากโครงการ X" value={form.reimbursementNote} onChange={(e) => form.setReimbursementNote(e.target.value)} className="mt-1" />
