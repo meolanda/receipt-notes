@@ -203,11 +203,13 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
             </Button>
           </div>
 
-          {/* VAT Toggle */}
-          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted">
-            <Label htmlFor="vat" className="cursor-pointer">คิด VAT 7%</Label>
-            <Switch id="vat" checked={form.vatEnabled} onCheckedChange={form.setVatEnabled} />
-          </div>
+          {/* VAT Toggle — ซ่อนถ้าเป็น bank_slip */}
+          {form.scanDocType !== "bank_slip" && (
+            <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted">
+              <Label htmlFor="vat" className="cursor-pointer">คิด VAT 7%</Label>
+              <Switch id="vat" checked={form.vatEnabled} onCheckedChange={form.setVatEnabled} />
+            </div>
+          )}
 
           {/* Total */}
           <div className="space-y-1 pt-3 border-t border-border">

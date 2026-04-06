@@ -127,6 +127,8 @@ export function getDeletedIds(): string[] {
   } catch { return []; }
 }
 
+const DELETED_IDS_TTL_DAYS = 90;
+
 export function deleteReceipt(id: string): void {
   const receipts = getReceipts().filter((r) => r.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
@@ -134,7 +136,9 @@ export function deleteReceipt(id: string): void {
   const deleted = getDeletedIds();
   if (!deleted.includes(id)) {
     deleted.push(id);
-    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(deleted));
+    // trim id ที่เก่ากว่า 90 วัน (เก็บแค่ 500 รายการล่าสุด)
+    const trimmed = deleted.slice(-500);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(trimmed));
   }
 }
 
@@ -182,7 +186,10 @@ export function downloadCSV(receipts: Receipt[], profileLabel?: string) {
   const a = document.createElement("a");
   a.href = url;
   const suffix = profileLabel ? `_${profileLabel}` : "";
-  a.download = `ใบเสร็จ${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const timeStr = now.toTimeString().slice(0, 5).replace(":", "-");
+  a.download = `ใบเสร็จ${suffix}_${dateStr}_${timeStr}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

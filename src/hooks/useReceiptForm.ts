@@ -59,9 +59,9 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
   }, [markDirty]);
 
   const categories = getCategoriesForProfile(profile);
-  const totalAmount = items.reduce((sum, i) => sum + i.quantity * i.price, 0);
-  const vatAmount = vatEnabled ? totalAmount * 0.07 : 0;
-  const grandTotal = totalAmount + vatAmount;
+  const totalAmount = Math.round(items.reduce((sum, i) => sum + i.quantity * i.price, 0) * 100) / 100;
+  const vatAmount = vatEnabled ? Math.round(totalAmount * 0.07 * 100) / 100 : 0;
+  const grandTotal = Math.round((totalAmount + vatAmount) * 100) / 100;
   const isLowConfidence = scanConfidence === "low";
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {

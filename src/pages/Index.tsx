@@ -51,8 +51,10 @@ const Index = () => {
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    // polling ทุก 60 วินาที (กรณีเปิด tab ค้างไว้)
-    const poll = setInterval(() => syncFromServer(true), 60_000);
+    // polling ทุก 60 วินาที (กรณีเปิด tab ค้างไว้) — หยุดตอน tab ซ่อน
+    const poll = setInterval(() => {
+      if (!document.hidden) syncFromServer(true);
+    }, 60_000);
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
