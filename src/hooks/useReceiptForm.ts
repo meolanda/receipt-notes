@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
 import { isServerSyncAvailable, syncReceiptToServer, updateReceiptOnServer } from "@/lib/server-sync";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
-import { scanReceipt, getClaudeSettings, type ScanResult } from "@/lib/claude-api";
+import { scanReceipt, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
 
@@ -183,12 +183,6 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
       toast.error("กรุณาอัปโหลดรูปใบเสร็จก่อน");
       return;
     }
-    const claudeSettings = getClaudeSettings();
-    if (!claudeSettings.apiKey) {
-      toast.error("กรุณากรอก Gemini API Key ก่อน (ไปที่แท็บตั้งค่า)");
-      return;
-    }
-
     setScanning(true);
     setScanModel(null);
     setScanConfidence(null);
