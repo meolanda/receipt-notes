@@ -50,7 +50,14 @@ const Index = () => {
       if (document.visibilityState === "visible") syncFromServer(true);
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+
+    // polling ทุก 60 วินาที (กรณีเปิด tab ค้างไว้)
+    const poll = setInterval(() => syncFromServer(true), 60_000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(poll);
+    };
   }, [syncFromServer]);
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);

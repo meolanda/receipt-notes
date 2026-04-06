@@ -1,5 +1,5 @@
 import type { Receipt } from "./receipt-store";
-import { getReceipts, saveReceipt, getDeletedIds } from "./receipt-store";
+import { getReceipts, saveReceipt, updateReceipt, getDeletedIds } from "./receipt-store";
 
 /** true ถ้าไม่ได้รันบน localhost (= deploy บน Vercel) */
 export function isServerSyncAvailable(): boolean {
@@ -47,22 +47,29 @@ export async function restoreFromServer(): Promise<{ added: number; skipped: num
   for (const row of rows) {
     // ข้าม id ที่เคยลบไปแล้วในเครื่องนี้
     if (row.id && deletedIds.includes(row.id)) {
-      console.log("[restoreFromServer] skipped (in deletedIds):", row.id, row.title);
       skipped++;
       continue;
     }
 
+    // ถ้ามี id ตรงกันในเครื่อง → mark synced: true เพื่อป้องกัน sync ซ้ำ
+    if (row.id) {
+      const localMatch = existing.find((r) => r.id === row.id);
+      if (localMatch) {
+        if (!localMatch.synced) updateReceipt(localMatch.id, { synced: true });
+        skipped++;
+        continue;
+      }
+    }
+
     const isDuplicate = existing.some(
       (r) =>
-        (row.id && r.id === row.id) ||
-        (r.title === row.title &&
-          r.date === row.date &&
-          r.profile === row.profile &&
-          Math.abs(r.grandTotal - (Number(row.grandTotal) || 0)) < 0.01)
+        r.title === row.title &&
+        r.date === row.date &&
+        r.profile === row.profile &&
+        Math.abs(r.grandTotal - (Number(row.grandTotal) || 0)) < 0.01
     );
 
     if (isDuplicate) {
-      console.log("[restoreFromServer] skipped (duplicate):", row.id, row.title);
       skipped++;
       continue;
     }

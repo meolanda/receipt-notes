@@ -82,7 +82,7 @@ export default function SyncButton({ receipts }: SyncButtonProps) {
   const useServer = isServerSyncAvailable();
   const pendingCount = useServer ? receipts.filter((r) => !r.synced).length : receipts.length;
 
-  if (receipts.length === 0) return null;
+  if (receipts.length === 0 || pendingCount === 0) return null;
 
   const tokenExpired = !useServer && isTokenExpired();
 
