@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { getCategoriesForProfile, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
+import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
 import { isServerSyncAvailable, syncReceiptToServer, updateReceiptOnServer } from "@/lib/server-sync";
 import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
 import { scanReceipt, type ScanResult } from "@/lib/claude-api";
@@ -97,7 +97,10 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
   const updateItem = useCallback((idx: number, field: keyof ReceiptItem, value: string | number) => {
     setItems(prev => {
       const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: value };
+      let finalValue = value;
+      if (field === "quantity") finalValue = Math.max(1, Number(value) || 1);
+      if (field === "price") finalValue = Math.max(0, Number(value) || 0);
+      updated[idx] = { ...updated[idx], [field]: finalValue };
       return updated;
     });
   }, []);
@@ -188,7 +191,11 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
     setScanConfidence(null);
     setScanDocType(null);
     try {
-      const result = await scanReceipt(imageData);
+      const scanPromise = scanReceipt(imageData);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("สแกนใช้เวลานานเกินไป (30 วินาที) กรุณาลองใหม่")), 30_000)
+      );
+      const result = await Promise.race([scanPromise, timeoutPromise]);
       applyAutoFill(result);
       setScanModel(result.modelUsed);
 
@@ -252,6 +259,19 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
     setSaving(true);
 
     try {
+      // ตรวจสอบใบเสร็จซ้ำ (เฉพาะรายการใหม่)
+      if (!editData) {
+        const now = Date.now();
+        const recent = getReceipts().filter(r => now - new Date(r.createdAt).getTime() < 24 * 60 * 60 * 1000);
+        const isDuplicate = recent.some(
+          r => r.grandTotal === grandTotal && r.date === date && r.title.trim().toLowerCase() === title.trim().toLowerCase()
+        );
+        if (isDuplicate) {
+          const confirmed = window.confirm("พบรายการที่คล้ายกันบันทึกไว้แล้วใน 24 ชั่วโมงที่ผ่านมา\nต้องการบันทึกซ้ำหรือไม่?");
+          if (!confirmed) { setSaving(false); return; }
+        }
+      }
+
       const receiptData = {
         profile,
         title: title.trim(),

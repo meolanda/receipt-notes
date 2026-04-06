@@ -62,6 +62,14 @@ const Index = () => {
 
   const refresh = useCallback(() => setReceipts(getReceipts()), []);
 
+  const handleTabChange = (newTab: string) => {
+    if (formDirty && tab === "add" && newTab !== "add") {
+      if (!window.confirm("มีข้อมูลที่กรอกอยู่ ถ้าออกไปข้อมูลจะหายไป ต้องการออกหรือไม่?")) return;
+      setFormDirty(false);
+    }
+    setTab(newTab);
+  };
+
   const handleProfileChange = (p: Profile) => {
     if (p === profile) return;
     if (tab === "add" && formDirty) {
@@ -125,7 +133,7 @@ const Index = () => {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-5 pb-24 space-y-5 safe-bottom">
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList className="w-full h-12">
             <TabsTrigger value="add" className="flex-1 gap-1 sm:gap-1.5 text-xs sm:text-sm py-2.5">
               <Receipt className="h-4 w-4 shrink-0" />

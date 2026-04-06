@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil } from "lucide-react";
+import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil } from "lucide-react";
 import { TAGS, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 
@@ -69,7 +69,10 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
           {/* Image upload */}
           <div>
             <Label>รูปใบเสร็จ (ไม่บังคับ)</Label>
-            <input ref={form.fileRef} type="file" accept="image/*" className="hidden" onChange={form.handleImageUpload} />
+            {/* input สำหรับกล้องโดยตรง (มือถือ) */}
+            <input ref={form.fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={form.handleImageUpload} />
+            {/* input สำหรับเลือกรูปจากคลัง */}
+            <input id="galleryInput" type="file" accept="image/*" className="hidden" onChange={form.handleImageUpload} />
             {form.imageData ? (
               <div className="relative mt-2">
                 <img src={form.imageData} alt="ใบเสร็จ" className="w-full max-h-48 object-cover rounded-lg border border-border" />
@@ -78,10 +81,16 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                 </Button>
               </div>
             ) : (
-              <Button type="button" variant="outline" className="mt-2 w-full border-dashed h-24 flex flex-col gap-1" onClick={() => form.fileRef.current?.click()}>
-                <Camera className="h-6 w-6 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">ถ่ายรูป / เลือกรูป</span>
-              </Button>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button type="button" variant="outline" className="border-dashed h-20 flex flex-col gap-1" onClick={() => form.fileRef.current?.click()}>
+                  <Camera className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">ถ่ายรูป</span>
+                </Button>
+                <Button type="button" variant="outline" className="border-dashed h-20 flex flex-col gap-1" onClick={() => document.getElementById("galleryInput")?.click()}>
+                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">เลือกจากคลัง</span>
+                </Button>
+              </div>
             )}
             {form.imageData && (
               <Button type="button" variant="secondary" className="mt-2 w-full gap-2" onClick={form.handleScan} disabled={form.scanning}>
