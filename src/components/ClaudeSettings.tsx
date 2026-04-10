@@ -3,12 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, Save, Shield } from "lucide-react";
+import { Bot, Save, Shield, Trash2 } from "lucide-react";
 import { getClaudeSettings, saveClaudeSettings, type ClaudeModel } from "@/lib/claude-api";
+import { compactImageStorage, getImageStorageInfo } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 export default function ClaudeSettings() {
   const [settings, setSettings] = useState(getClaudeSettings);
+  const storageInfo = getImageStorageInfo();
 
   const handleSave = () => {
     saveClaudeSettings(settings);
@@ -49,6 +51,37 @@ export default function ClaudeSettings() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground">
           <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>AI สแกนใบเสร็จผ่าน Server — ไม่ต้องใส่ API Key ทุก device ใช้ได้เลย</span>
+        </div>
+
+        {/* Storage info & compact */}
+        <div className="p-3 rounded-lg bg-muted space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">พื้นที่ใช้งาน</span>
+            <span className="font-medium">{storageInfo.usedMB} / ~5 MB</span>
+          </div>
+          {storageInfo.withImageCount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">รูปใน storage ({storageInfo.withImageCount} ใบ)</span>
+              <span className="font-medium">{storageInfo.totalImageMB} MB</span>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
+            onClick={() => {
+              const { count, savedMB } = compactImageStorage();
+              if (count === 0) {
+                toast.info("ไม่มีรูปที่ล้างได้ (เฉพาะรูปที่ sync แล้วเท่านั้น)");
+              } else {
+                toast.success(`ล้างรูปแล้ว ${count} ใบ ประหยัดได้ ${savedMB} MB`);
+              }
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            ล้างรูปจาก storage (เพิ่มพื้นที่)
+          </Button>
+          <p className="text-xs text-muted-foreground">จะลบเฉพาะรูปที่ sync ขึ้น Google Drive แล้ว ข้อมูลยังอยู่ครบ</p>
         </div>
       </CardContent>
     </Card>

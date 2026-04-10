@@ -163,6 +163,45 @@ export function clearDeletedIds(): void {
   localStorage.removeItem(DELETED_IDS_KEY);
 }
 
+/**
+ * ล้างรูปภาพออกจาก localStorage เพื่อเพิ่มพื้นที่
+ * - ลบรูปจากใบที่ sync แล้วและมี imageUrl (อยู่บน Google Drive แล้ว)
+ * - ถ้าไม่มี imageUrl ให้เก็บรูปไว้
+ * คืนค่าจำนวนที่ลบรูปออก และพื้นที่ที่ประหยัดได้ (MB)
+ */
+export function compactImageStorage(): { count: number; savedMB: string } {
+  const receipts = getReceipts();
+  let count = 0;
+  let savedBytes = 0;
+  const updated = receipts.map((r) => {
+    if (r.imageData && (r.imageUrl || r.synced)) {
+      savedBytes += r.imageData.length * 2;
+      count++;
+      return { ...r, imageData: undefined };
+    }
+    return r;
+  });
+  if (count > 0) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  }
+  return { count, savedMB: (savedBytes / 1024 / 1024).toFixed(1) };
+}
+
+export function getImageStorageInfo(): { withImageCount: number; totalImageMB: string; usedMB: string } {
+  const receipts = getReceipts();
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key) total += (localStorage.getItem(key) || "").length * 2;
+  }
+  const imageBytes = receipts.reduce((s, r) => s + (r.imageData ? r.imageData.length * 2 : 0), 0);
+  return {
+    withImageCount: receipts.filter((r) => r.imageData).length,
+    totalImageMB: (imageBytes / 1024 / 1024).toFixed(1),
+    usedMB: (total / 1024 / 1024).toFixed(1),
+  };
+}
+
 export function exportToCSV(receipts: Receipt[]): string {
   const headers = [
     "วันที่", "หัวข้อ", "ร้านค้า/ผู้รับเงิน", "รายละเอียด", "หมวดหมู่", "แท็ก", "โปรไฟล์",
