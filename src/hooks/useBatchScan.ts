@@ -24,6 +24,7 @@ export interface PendingReviewItem {
   fileName: string;
   imageData: string;
   result: ScanResult;
+  manualEntry?: boolean;  // true = scan fail ทั้งหมด ต้องกรอกเอง
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -245,9 +246,10 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       const groupLabel = group.map((f) => f.name).join(", ");
       setBatchCurrentFile(`กลุ่ม ${Math.floor(gi / BATCH_GROUP_SIZE) + 1}: ${group[0].name}${group.length > 1 ? ` +${group.length - 1} รูป` : ""}`);
 
+      // ย้าย imagePayloads ออกนอก try → catch สามารถเข้าถึงได้เพื่อส่งไป manual review
+      let imagePayloads: Array<{ mimeType: string; base64: string; file: File; imageData: string }> = [];
       try {
         // compress และ encode ทุกรูปในกลุ่ม
-        const imagePayloads: Array<{ mimeType: string; base64: string; file: File; imageData: string }> = [];
         for (const file of group) {
           const raw = await fileToBase64(file);
           const match = raw.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -311,10 +313,25 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
         }
 
       } catch (err: any) {
-        // ทั้ง group fail → นับเป็น failed ทุกไฟล์ใน group
-        toast.error(`❌ กลุ่ม "${groupLabel.slice(0, 50)}": ${err.message.slice(0, 60)}`);
-        for (const file of group) {
-          failed.push({ name: file.name, reason: err.message, file });
+        // ทั้ง group fail → ถ้ามีรูปที่ compress แล้ว → ส่งไป manual review ให้กรอกเอง
+        toast.warning(`⚠️ สแกนไม่ได้ ${imagePayloads.length || group.length} รูป — โปรดกรอกข้อมูลเอง`);
+        const emptyResult: ScanResult = {
+          confidence: "low", document_type: "other",
+          store_name: null, date: null, total: null,
+          items: [], subtotal: null, vat: null, notes: null,
+          recipient_name: null, bank: null, time: null,
+          doc_number: null, tax_id: null, reference_id: null, amount: null,
+        };
+        if (imagePayloads.length > 0) {
+          // มีรูป → ส่งไป review dialog
+          for (const p of imagePayloads) {
+            toReview.push({ id: crypto.randomUUID(), fileName: p.file.name, imageData: p.imageData, result: emptyResult, manualEntry: true });
+          }
+        } else {
+          // compress ยังไม่ทัน → ยังต้องอยู่ใน failed
+          for (const file of group) {
+            failed.push({ name: file.name, reason: err.message, file });
+          }
         }
       }
 

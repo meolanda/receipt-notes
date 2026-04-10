@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, SkipForward, AlertTriangle } from "lucide-react";
+import { Save, SkipForward, AlertTriangle, PenLine } from "lucide-react";
 import { getCategoriesForProfile, type Profile } from "@/lib/receipt-store";
 import type { PendingReviewItem, ReviewEdits } from "@/hooks/useBatchScan";
 
@@ -108,20 +108,29 @@ export default function BatchReviewDialog({
 
           {/* Badge เหตุผล */}
           <div className="flex flex-wrap gap-1.5">
-            {current.result.confidence === "low" && (
-              <Badge variant="outline" className="text-xs bg-red-50 text-red-600 border-red-200">
-                ⚠️ AI ไม่มั่นใจ
+            {current.manualEntry ? (
+              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                <PenLine className="h-3 w-3 mr-1" />
+                สแกนไม่ได้ — กรอกข้อมูลเอง
               </Badge>
-            )}
-            {isYearSuspicious && (
-              <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                📅 ปีอาจผิด ({scannedYear})
-              </Badge>
-            )}
-            {current.result.document_type === "market_bill" && (
-              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                ✍️ ลายมือ
-              </Badge>
+            ) : (
+              <>
+                {current.result.confidence === "low" && (
+                  <Badge variant="outline" className="text-xs bg-red-50 text-red-600 border-red-200">
+                    ⚠️ AI ไม่มั่นใจ
+                  </Badge>
+                )}
+                {isYearSuspicious && (
+                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                    📅 ปีอาจผิด ({scannedYear})
+                  </Badge>
+                )}
+                {current.result.document_type === "market_bill" && (
+                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    ✍️ ลายมือ
+                  </Badge>
+                )}
+              </>
             )}
           </div>
 
