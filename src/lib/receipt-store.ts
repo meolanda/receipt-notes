@@ -106,7 +106,18 @@ export function saveReceipt(receipt: Omit<Receipt, "id" | "createdAt">): Receipt
     createdAt: new Date().toISOString(),
   };
   receipts.unshift(newReceipt);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(receipts));
+  } catch (e) {
+    // localStorage เต็ม — ลองบันทึกโดยไม่มีรูป
+    const withoutImage = receipts.map((r) => ({ ...r, imageData: undefined }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(withoutImage));
+      console.warn("localStorage เต็ม: บันทึกข้อมูลโดยไม่มีรูปภาพ");
+    } catch {
+      throw new Error("พื้นที่จัดเก็บเต็ม กรุณาลบใบเสร็จเก่าออกก่อน");
+    }
+  }
   return newReceipt;
 }
 

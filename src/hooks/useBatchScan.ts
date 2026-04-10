@@ -130,8 +130,15 @@ async function processFile(
 
       const docLabel = DOC_TYPE_LABELS[result.document_type] || "เอกสาร";
       const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
-      autoSaveResult(result, imageData, profile);
-      toast.success(`✅ ${result.store_name || docLabel}${totalStr}`);
+      // ไม่บันทึก imageData ใน batch mode เพื่อประหยัด localStorage
+      try {
+        autoSaveResult(result, undefined, profile);
+        toast.success(`✅ ${result.store_name || docLabel}${totalStr}`);
+      } catch (saveErr: any) {
+        toast.error(`บันทึกไม่สำเร็จ (${file.name}): ${saveErr.message}`);
+        onProgress();
+        return 0;
+      }
       onProgress();
       return 1;
     }
