@@ -191,12 +191,11 @@ export function compactImageStorage(): { count: number; savedMB: string } {
  * หาและลบใบเสร็จซ้ำ: storeName + date + grandTotal ตรงกัน → เก็บอันเก่าสุด ลบที่เหลือ
  * คืนจำนวนที่ลบออก
  */
-export function removeDuplicateReceipts(): number {
+export function removeDuplicateReceipts(): { count: number; syncedIds: string[] } {
   const receipts = getReceipts();
-  const seen = new Map<string, string>(); // key → id ที่เก็บไว้ (เก่าสุด)
+  const seen = new Map<string, string>();
   const toDelete = new Set<string>();
 
-  // เรียงจากเก่าสุดก่อน เพื่อให้ keep อันแรก
   const sorted = [...receipts].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
@@ -210,11 +209,16 @@ export function removeDuplicateReceipts(): number {
     }
   }
 
-  if (toDelete.size === 0) return 0;
+  if (toDelete.size === 0) return { count: 0, syncedIds: [] };
+
+  // IDs ที่ sync ขึ้น server แล้ว ต้องลบบน server ด้วย
+  const syncedIds = receipts
+    .filter((r) => toDelete.has(r.id) && r.synced)
+    .map((r) => r.id);
 
   const cleaned = receipts.filter((r) => !toDelete.has(r.id));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-  return toDelete.size;
+  return { count: toDelete.size, syncedIds };
 }
 
 export function getImageStorageInfo(): { withImageCount: number; totalImageMB: string; usedMB: string } {

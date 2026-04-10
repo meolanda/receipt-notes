@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Bot, Save, Shield, Trash2 } from "lucide-react";
 import { getClaudeSettings, saveClaudeSettings, type ClaudeModel } from "@/lib/claude-api";
 import { compactImageStorage, getImageStorageInfo, removeDuplicateReceipts } from "@/lib/receipt-store";
+import { deleteReceiptFromServer, isServerSyncAvailable } from "@/lib/server-sync";
 import { toast } from "sonner";
 
 export default function ClaudeSettings() {
@@ -87,10 +88,19 @@ export default function ClaudeSettings() {
             variant="outline"
             size="sm"
             className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
-            onClick={() => {
-              const count = removeDuplicateReceipts();
-              if (count === 0) toast.info("ไม่พบใบเสร็จซ้ำ");
-              else toast.success(`ลบซ้ำแล้ว ${count} ใบ (เก็บอันเก่าสุดไว้)`);
+            onClick={async () => {
+              const { count, syncedIds } = removeDuplicateReceipts();
+              if (count === 0) { toast.info("ไม่พบใบเสร็จซ้ำ"); return; }
+              toast.success(`ลบซ้ำแล้ว ${count} ใบในเครื่อง`);
+              if (syncedIds.length > 0 && isServerSyncAvailable()) {
+                toast.info(`กำลังลบ ${syncedIds.length} ใบบน Server และ Google Sheets...`);
+                const results = await Promise.allSettled(
+                  syncedIds.map((id) => deleteReceiptFromServer(id))
+                );
+                const failed = results.filter((r) => r.status === "rejected").length;
+                if (failed > 0) toast.error(`ลบบน Server ไม่สำเร็จ ${failed} รายการ`);
+                else toast.success(`ลบบน Server และ Google Sheets เรียบร้อย ✅`);
+              }
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
