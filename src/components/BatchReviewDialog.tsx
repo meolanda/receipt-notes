@@ -47,7 +47,7 @@ export default function BatchReviewDialog({
 
   const currentYear = new Date().getFullYear();
   const scannedYear = date ? parseInt(date.slice(0, 4), 10) : 0;
-  const isYearSuspicious = scannedYear > 0 && (scannedYear < 2010 || scannedYear > currentYear + 1);
+  const isYearSuspicious = scannedYear > 0 && (scannedYear < currentYear - 2 || scannedYear > currentYear + 1);
 
   const doneCount = reviewTotal - items.length; // บันทึก/ข้ามไปแล้วกี่ใบ
   const progressPct = reviewTotal > 0 ? (doneCount / reviewTotal) * 100 : 0;

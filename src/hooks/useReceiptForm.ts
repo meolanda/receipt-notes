@@ -115,7 +115,7 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
       // ตรวจสอบปีที่ OCR อ่านได้
       const scannedYear = parseInt(result.date.slice(0, 4), 10);
       const currentYear = new Date().getFullYear();
-      if (scannedYear < 2010 || scannedYear > currentYear + 1) {
+      if (scannedYear < currentYear - 2 || scannedYear > currentYear + 1) {
         toast.warning(`⚠️ ปีที่อ่านได้ (${scannedYear}) ดูผิดปกติ กรุณาตรวจสอบวันที่`);
         setScanConfidence("low"); // บังคับ highlight สีเหลืองทุก field
       }

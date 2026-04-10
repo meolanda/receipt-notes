@@ -279,7 +279,8 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
 
           const scannedYear = result.date ? parseInt(result.date.slice(0, 4), 10) : 0;
           const currentYear = new Date().getFullYear();
-          const isYearSuspicious = scannedYear > 0 && (scannedYear < 2010 || scannedYear > currentYear + 1);
+          // ปีที่อ่านได้เก่ากว่า 2 ปีก็น่าสงสัย (OCR อาจอ่าน 2026 → 2021/2023)
+          const isYearSuspicious = scannedYear > 0 && (scannedYear < currentYear - 2 || scannedYear > currentYear + 1);
 
           // ข้ามถ้าซ้ำ
           if (isDuplicateResult(result, profile)) {
