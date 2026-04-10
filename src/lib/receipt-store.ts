@@ -229,32 +229,53 @@ export function isSimilarStoreName(a: string, b: string): boolean {
 }
 
 /**
- * หาและลบใบเสร็จซ้ำ: storeName + date + grandTotal ตรงกัน → เก็บอันเก่าสุด ลบที่เหลือ
- * คืนจำนวนที่ลบออก
+ * ตรวจสอบว่า receipt ที่จะบันทึกซ้ำกับที่มีอยู่แล้วหรือไม่
+ * strong: วันที่ + ยอดรวม (>= 20฿) ตรงกัน → ซ้ำแน่ๆ แม้ชื่อร้านต่างกัน (OCR ผิดพลาดได้)
+ * fuzzy: วันที่ + ยอดรวม (< 20฿) + ชื่อร้านคล้ายกัน → ซ้ำ
+ */
+export function isDuplicateReceipt(
+  candidate: Pick<Receipt, "date" | "grandTotal" | "storeName" | "profile">,
+  existing: Receipt[]
+): boolean {
+  const threshold = 20; // ยอด >= 20฿ ใช้ date+total เท่านั้น
+  return existing.some((r) => {
+    if (r.profile !== candidate.profile) return false;
+    if (r.date !== candidate.date) return false;
+    if (Math.abs(r.grandTotal - candidate.grandTotal) > 0.02) return false;
+    // ยอดสูง → ถือว่าซ้ำเลยโดยไม่สนชื่อร้าน
+    if (candidate.grandTotal >= threshold) return true;
+    // ยอดต่ำ → ต้องชื่อร้านคล้ายด้วย (ป้องกัน false positive ยอดเล็ก เช่น ค่าจอดรถ 20฿)
+    return isSimilarStoreName(r.storeName, candidate.storeName);
+  });
+}
+
+/**
+ * หาและลบใบเสร็จซ้ำ:
+ *   - Strong: date + grandTotal (>= 20฿) ตรงกัน → ซ้ำ (ไม่สนชื่อร้าน เพราะ OCR อาจอ่านผิด)
+ *   - Fuzzy: date + grandTotal (< 20฿) + storeName คล้ายกัน → ซ้ำ
+ * เก็บอันเก่าสุด (createdAt น้อยที่สุด) ลบที่เหลือ
  */
 export function removeDuplicateReceipts(): { count: number; syncedIds: string[] } {
   const receipts = getReceipts();
-  const seen = new Map<string, string>();
   const toDelete = new Set<string>();
 
+  // เรียงจากเก่าไปใหม่ → เก็บอันแรก ลบอันหลัง
   const sorted = [...receipts].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
+  // เก็บรายการที่ "ผ่านแล้ว" ไว้เทียบ
+  const kept: Receipt[] = [];
+
   for (const r of sorted) {
-    // Fuzzy: หา key ที่ store name คล้ายกัน + วันที่ + ยอดรวมตรงกัน
-    let foundKey: string | null = null;
-    for (const [seenKey] of seen) {
-      const [seenStore, seenDate, seenTotal] = seenKey.split("|");
-      if (seenDate === r.date && seenTotal === String(r.grandTotal) && isSimilarStoreName(seenStore, r.storeName.trim())) {
-        foundKey = seenKey;
-        break;
-      }
-    }
-    if (foundKey) {
+    const isDup = isDuplicateReceipt(
+      { date: r.date, grandTotal: r.grandTotal, storeName: r.storeName, profile: r.profile },
+      kept
+    );
+    if (isDup) {
       toDelete.add(r.id);
     } else {
-      seen.set(`${r.storeName.trim()}|${r.date}|${r.grandTotal}`, r.id);
+      kept.push(r);
     }
   }
 
@@ -285,30 +306,81 @@ export function getImageStorageInfo(): { withImageCount: number; totalImageMB: s
   };
 }
 
+/** ครอบ field ด้วย double-quote และ escape " → "" ตาม RFC 4180 */
+function csvCell(val: string | number | null | undefined): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+const DOC_TYPE_LABEL: Record<string, string> = {
+  receipt: "ใบเสร็จ",
+  quotation: "ใบเสนอราคา",
+  tax_invoice: "ใบกำกับภาษี",
+  invoice: "ใบแจ้งหนี้",
+  bank_slip: "สลิปโอน",
+  market_bill: "บิลตลาด",
+  other: "อื่นๆ",
+};
+
 export function exportToCSV(receipts: Receipt[]): string {
   const headers = [
-    "วันที่", "หัวข้อ", "ร้านค้า/ผู้รับเงิน", "รายละเอียด", "หมวดหมู่", "แท็ก", "โปรไฟล์",
-    "โครงการ/ลูกค้า", "รายการสินค้า", "ยอดรวม (บาท)", "VAT 7%", "ยอดรวมสุทธิ",
-    "หมายเหตุการเบิก"
+    "วันที่ใบเสร็จ",
+    "วันที่บันทึก",
+    "โปรไฟล์",
+    "หัวข้อ",
+    "ร้านค้า/ผู้รับเงิน",
+    "ประเภทเอกสาร",
+    "หมวดหมู่",
+    "แท็ก",
+    "โครงการ/ลูกค้า",
+    "รายการสินค้า",
+    "ยอดก่อน VAT",
+    "VAT 7%",
+    "ยอดรวมสุทธิ",
+    "รายละเอียด",
+    "หมายเหตุการเบิก",
+    "ลิงก์รูปภาพ",
+    "สถานะ Sync",
+    "รหัส",
   ];
+
   const rows = receipts.map((r) => {
-    const itemsStr = r.items.map((i) => `${i.name} x${i.quantity} = ${i.price}฿`).join("; ");
+    const itemsStr = r.items
+      .map((i) => `${i.name} x${i.quantity} @ ${i.price}฿ = ${(i.quantity * i.price).toFixed(2)}฿`)
+      .join(" | ");
+
+    const savedDate = r.createdAt
+      ? new Date(r.createdAt).toLocaleDateString("th-TH", {
+          year: "numeric", month: "2-digit", day: "2-digit",
+        })
+      : "";
+
     return [
-      r.date,
-      `"${r.title}"`,
-      `"${r.storeName || ""}"`,
-      `"${r.description}"`,
-      r.category,
-      r.tag,
-      r.profile === "personal" ? "ส่วนตัว" : "บริษัท",
-      `"${r.project || ""}"`,
-      `"${itemsStr}"`,
-      r.totalAmount.toFixed(2),
-      r.vatEnabled ? r.vatAmount.toFixed(2) : "0",
-      r.grandTotal.toFixed(2),
-      `"${r.reimbursementNote || ""}"`,
+      csvCell(r.date),
+      csvCell(savedDate),
+      csvCell(r.profile === "personal" ? "ส่วนตัว" : "บริษัท"),
+      csvCell(r.title),
+      csvCell(r.storeName),
+      csvCell(DOC_TYPE_LABEL[r.documentType || ""] || r.documentType || ""),
+      csvCell(r.category),
+      csvCell(r.tag),
+      csvCell(r.project),
+      csvCell(itemsStr),
+      csvCell(r.totalAmount.toFixed(2)),
+      csvCell(r.vatEnabled ? r.vatAmount.toFixed(2) : "0"),
+      csvCell(r.grandTotal.toFixed(2)),
+      csvCell(r.description),
+      csvCell(r.reimbursementNote),
+      csvCell(r.imageUrl),
+      csvCell(r.synced ? "✓ synced" : "⚠ ยังไม่ sync"),
+      csvCell(r.id),
     ].join(",");
   });
+
   return "\uFEFF" + [headers.join(","), ...rows].join("\n");
 }
 

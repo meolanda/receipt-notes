@@ -33,8 +33,11 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
+  // รายการทั้งหมดใน profile นี้ (ไม่นับที่กำลังรอลบ)
+  const allInProfile = receipts.filter((r) => r.profile === profile && !pendingDeleteIds.has(r.id));
+
   // กรองตาม profile + ซ่อนรายการที่กำลังรอลบ (undo window)
-  let filtered = receipts.filter((r) => r.profile === profile && !pendingDeleteIds.has(r.id));
+  let filtered = allInProfile.slice();
 
   // ค้นหา
   if (search) {
@@ -79,8 +82,8 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
   const visibleReceipts = filtered.slice(0, visibleCount);
   const profileLabel = profile === "personal" ? "ส่วนตัว" : "บริษัท";
 
-  // รายการที่ยังไม่ sync
-  const unsyncedList = filtered.filter((r) => !r.synced);
+  // รายการที่ยังไม่ sync (นับจาก ALL ไม่ใช่แค่ filtered)
+  const unsyncedList = allInProfile.filter((r) => !r.synced);
   const serverAvailable = isServerSyncAvailable();
 
   // ลบแบบ Undo (optimistic UI + 5 วินาที)

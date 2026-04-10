@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, isSimilarStoreName, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
+import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, isDuplicateReceipt, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
 import { scanBatch, scanPDF, type ScanResult } from "@/lib/claude-api";
 import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
 import { compressImage } from "@/lib/image-utils";
@@ -42,18 +42,14 @@ function autoTitle(result: ScanResult): string {
   return storePart ? storePart : `${docLabel} ${dateStr}`;
 }
 
-function isDuplicateResult(result: ScanResult): boolean {
+function isDuplicateResult(result: ScanResult, profile: Profile): boolean {
   const grandTotal = result.total || 0;
   const date = result.date || new Date().toISOString().slice(0, 10);
   const storeName = (result.store_name || result.recipient_name || "").trim();
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  return getReceipts().some((r) => {
-    if (new Date(r.createdAt).getTime() < cutoff) return false;
-    if (r.grandTotal !== grandTotal) return false;
-    if (r.date !== date) return false;
-    if (storeName && !isSimilarStoreName(r.storeName, storeName)) return false;
-    return true;
-  });
+  // ตรวจแค่ใน 30 วันล่าสุด เพื่อประสิทธิภาพ
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const recent = getReceipts().filter((r) => new Date(r.createdAt).getTime() >= cutoff);
+  return isDuplicateReceipt({ date, grandTotal, storeName, profile }, recent);
 }
 
 /** Auto-save สำหรับ high/medium confidence */
@@ -222,7 +218,7 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
         const results = await scanPDF(base64);
         let saved = 0, skipped = 0;
         for (const result of results) {
-          if (isDuplicateResult(result)) { skipped++; continue; }
+          if (isDuplicateResult(result, profile)) { skipped++; continue; }
           autoSaveResult(result, undefined, profile);
           saved++;
           savedCount++;
@@ -286,9 +282,11 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
           const isYearSuspicious = scannedYear > 0 && (scannedYear < 2010 || scannedYear > currentYear + 1);
 
           // ข้ามถ้าซ้ำ
-          if (isDuplicateResult(result)) {
+          if (isDuplicateResult(result, profile)) {
             const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
             toast.info(`ข้ามซ้ำ: ${result.store_name || file.name}${totalStr}`);
+            doneCount++;
+            setBatchProgress(doneCount);
             continue;
           }
 

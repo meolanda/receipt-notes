@@ -9,7 +9,7 @@ import { compactImageStorage, getImageStorageInfo, removeDuplicateReceipts } fro
 import { deleteReceiptFromServer, isServerSyncAvailable } from "@/lib/server-sync";
 import { toast } from "sonner";
 
-export default function ClaudeSettings() {
+export default function ClaudeSettings({ onChanged }: { onChanged?: () => void }) {
   const [settings, setSettings] = useState(getClaudeSettings);
   const storageInfo = getImageStorageInfo();
 
@@ -90,23 +90,24 @@ export default function ClaudeSettings() {
             className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
             onClick={async () => {
               const { count, syncedIds } = removeDuplicateReceipts();
-              if (count === 0) { toast.info("ไม่พบใบเสร็จซ้ำ"); return; }
+              onChanged?.();
+              if (count === 0) { toast.info("ไม่พบใบเสร็จซ้ำ ✅"); return; }
               toast.success(`ลบซ้ำแล้ว ${count} ใบในเครื่อง`);
               if (syncedIds.length > 0 && isServerSyncAvailable()) {
-                toast.info(`กำลังลบ ${syncedIds.length} ใบบน Server และ Google Sheets...`);
+                toast.info(`กำลังลบ ${syncedIds.length} ใบบน Google Sheets...`);
                 const results = await Promise.allSettled(
                   syncedIds.map((id) => deleteReceiptFromServer(id))
                 );
                 const failed = results.filter((r) => r.status === "rejected").length;
-                if (failed > 0) toast.error(`ลบบน Server ไม่สำเร็จ ${failed} รายการ`);
-                else toast.success(`ลบบน Server และ Google Sheets เรียบร้อย ✅`);
+                if (failed > 0) toast.error(`ลบบน Sheets ไม่สำเร็จ ${failed} รายการ`);
+                else toast.success(`ลบบน Google Sheets เรียบร้อย ✅`);
               }
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
             ตรวจและลบใบเสร็จซ้ำ
           </Button>
-          <p className="text-xs text-muted-foreground">ตรวจจาก: ร้านค้า + วันที่ + ยอดรวม ตรงกัน → ลบอันใหม่ เก็บอันเก่า</p>
+          <p className="text-xs text-muted-foreground">ตรวจจาก: วันที่ + ยอดรวม ตรงกัน → ลบอันใหม่ เก็บอันเก่า (ไม่สนชื่อร้าน เพราะ OCR อาจอ่านต่างกัน)</p>
         </div>
       </CardContent>
     </Card>

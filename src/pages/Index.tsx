@@ -172,7 +172,7 @@ const Index = () => {
             <ExpenseSummary receipts={receipts} profile={profile} />
           </TabsContent>
           <TabsContent value="settings" className="mt-4 space-y-5">
-            <ClaudeSettings />
+            <ClaudeSettings onChanged={refresh} />
             <CategoryManager />
             <GoogleSettings />
           </TabsContent>

@@ -26,7 +26,8 @@
       "mcp__ac-parts-filesystem__directory_tree",
       "mcp__ac-parts-filesystem__list_allowed_directories",
       "mcp__ac-parts-filesystem__list_directory",
-      "Bash(ls -la src/components/*.tsx)"
+      "Bash(ls -la src/components/*.tsx)",
+      "WebFetch(domain:docs.google.com)"
     ]
   }
 }
