@@ -110,7 +110,16 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
     setScanConfidence(result.confidence);
     setScanDocType(result.document_type);
 
-    if (result.date) setDate(result.date);
+    if (result.date) {
+      setDate(result.date);
+      // ตรวจสอบปีที่ OCR อ่านได้
+      const scannedYear = parseInt(result.date.slice(0, 4), 10);
+      const currentYear = new Date().getFullYear();
+      if (scannedYear < 2010 || scannedYear > currentYear + 1) {
+        toast.warning(`⚠️ ปีที่อ่านได้ (${scannedYear}) ดูผิดปกติ กรุณาตรวจสอบวันที่`);
+        setScanConfidence("low"); // บังคับ highlight สีเหลืองทุก field
+      }
+    }
 
     if (result.items.length > 0) {
       setItems(

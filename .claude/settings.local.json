@@ -22,7 +22,11 @@
       "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\lib\\\\server-sync.ts\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\lib\\\\server-sync.ts\")",
       "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\lib\\\\receipt-store.ts\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\lib\\\\receipt-store.ts\")",
       "Bash(cp \"D:\\\\เขียน APP\\\\receipt-notes-main\\\\receipt-notes-main\\\\src\\\\components\\\\GoogleSettings.tsx\" \"D:\\\\เขียน APP\\\\receipt-notes-git\\\\src\\\\components\\\\GoogleSettings.tsx\")",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "mcp__ac-parts-filesystem__directory_tree",
+      "mcp__ac-parts-filesystem__list_allowed_directories",
+      "mcp__ac-parts-filesystem__list_directory",
+      "Bash(ls -la src/components/*.tsx)"
     ]
   }
 }

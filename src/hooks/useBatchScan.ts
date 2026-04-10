@@ -1,14 +1,30 @@
 import { useCallback, useRef, useState } from "react";
-import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
-import { scanReceipt, scanPDF, type ScanResult } from "@/lib/claude-api";
+import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, isSimilarStoreName, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
+import { scanBatch, scanPDF, type ScanResult } from "@/lib/claude-api";
 import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
 import { DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 
-const CONCURRENT_LIMIT = 2;
-const SCAN_TIMEOUT_MS = 60_000;
-const BATCH_DELAY_MS = 1_000; // หน่วงระหว่าง batch เพื่อไม่ให้ hit rate limit
+const BATCH_GROUP_SIZE = 5;    // จำนวนรูปต่อ 1 Gemini request (5 = ปลอดภัยกับ Vercel Hobby 10s)
+const GROUP_DELAY_MS   = 3_000; // หน่วงระหว่าง group ป้องกัน rate limit
+const PDF_DELAY_MS     = 2_000; // หน่วงระหว่าง PDF
+
+// ข้อมูลที่ผู้ใช้แก้ไขในหน้า review
+export interface ReviewEdits {
+  storeName: string;
+  date: string;
+  grandTotal: number;
+  category: string;
+}
+
+// รายการ low confidence ที่รอผู้ใช้ตรวจก่อนบันทึก
+export interface PendingReviewItem {
+  id: string;
+  fileName: string;
+  imageData: string;
+  result: ScanResult;
+}
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -17,15 +33,6 @@ async function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label}: หมดเวลา (${ms / 1000}s)`)), ms)
-    ),
-  ]);
 }
 
 function autoTitle(result: ScanResult): string {
@@ -38,17 +45,18 @@ function autoTitle(result: ScanResult): string {
 function isDuplicateResult(result: ScanResult): boolean {
   const grandTotal = result.total || 0;
   const date = result.date || new Date().toISOString().slice(0, 10);
-  const storeName = (result.store_name || result.recipient_name || "").trim().toLowerCase();
+  const storeName = (result.store_name || result.recipient_name || "").trim();
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   return getReceipts().some((r) => {
     if (new Date(r.createdAt).getTime() < cutoff) return false;
     if (r.grandTotal !== grandTotal) return false;
     if (r.date !== date) return false;
-    if (storeName && r.storeName.trim().toLowerCase() !== storeName) return false;
+    if (storeName && !isSimilarStoreName(r.storeName, storeName)) return false;
     return true;
   });
 }
 
+/** Auto-save สำหรับ high/medium confidence */
 function autoSaveResult(result: ScanResult, imageData: string | undefined, profile: Profile): void {
   const categories = getCategoriesForProfile(profile);
   const category = (result.document_type === "market_bill" && categories.includes("อาหาร"))
@@ -70,7 +78,6 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
     : [{ name: autoTitle(result), quantity: 1, price: grandTotal }];
 
   const tag = profile === "company" ? "บริษัท" as const : "ส่วนตัว" as const;
-
   let description = "";
   if (result.document_type === "bank_slip") {
     const parts = [`Ref: ${result.reference_id || "-"}`];
@@ -110,70 +117,51 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
   }
 }
 
-interface FileResult {
-  saved: number;
-  failReason: string | null; // null = success หรือ skip
-}
-
-async function processFile(
-  file: File,
+/** บันทึกหลังผู้ใช้ review และแก้ไขแล้ว */
+export function saveReviewedResult(
+  result: ScanResult,
+  imageData: string,
   profile: Profile,
-  onProgress: () => void,
-  cancelRef: React.MutableRefObject<boolean>
-): Promise<FileResult> {
-  if (cancelRef.current) return { saved: 0, failReason: null };
+  edits: ReviewEdits
+): void {
+  const vatAmount = result.vat != null ? Number(result.vat) : 0;
+  const totalAmount = Math.max(0, edits.grandTotal - vatAmount);
+  const originalTotal = result.total || 1;
+  const ratio = edits.grandTotal / (originalTotal || 1);
 
-  if (file.size > 20 * 1024 * 1024) {
-    onProgress();
-    return { saved: 0, failReason: "ไฟล์ใหญ่เกินไป (>20MB)" };
-  }
+  const items = result.items.length > 0
+    ? result.items.map((i) => ({
+        name: i.name,
+        quantity: i.quantity || 1,
+        price: Math.round((i.unit_price || (i.total / (i.quantity || 1)) || 0) * ratio * 100) / 100,
+      }))
+    : [{ name: edits.storeName || "รายการ", quantity: 1, price: edits.grandTotal }];
 
-  try {
-    const base64 = await fileToBase64(file);
-    if (cancelRef.current) return { saved: 0, failReason: null };
+  const tag = profile === "company" ? "บริษัท" as const : "ส่วนตัว" as const;
 
-    if (file.type === "application/pdf") {
-      const results = await withTimeout(scanPDF(base64), SCAN_TIMEOUT_MS, file.name);
-      if (cancelRef.current) return { saved: 0, failReason: null };
-      let saved = 0, skipped = 0;
-      for (const result of results) {
-        if (isDuplicateResult(result)) { skipped++; continue; }
-        autoSaveResult(result, undefined, profile);
-        saved++;
-      }
-      if (skipped > 0) toast.info(`PDF "${file.name}": บันทึก ${saved} ใบ (ข้าม ${skipped} ซ้ำ)`);
-      else toast.success(`PDF "${file.name}": พบ ${results.length} ใบเสร็จ`);
-      onProgress();
-      return { saved, failReason: null };
-    } else {
-      let imageData = base64;
-      try { imageData = await compressImage(base64, 1200, 0.7); } catch { /* ใช้ต้นฉบับ */ }
-      if (cancelRef.current) return { saved: 0, failReason: null };
+  const receipt = saveReceipt({
+    profile,
+    title: edits.storeName || autoTitle(result),
+    storeName: edits.storeName,
+    description: result.doc_number || result.notes || "",
+    category: edits.category,
+    tag,
+    date: edits.date,
+    totalAmount,
+    vatEnabled: vatAmount > 0,
+    vatAmount,
+    grandTotal: edits.grandTotal,
+    items: items.filter((i) => i.name.trim()),
+    project: "",
+    reimbursementNote: "",
+    imageData,
+    documentType: result.document_type as DocumentTypeValue,
+  });
 
-      const result = await withTimeout(scanReceipt(imageData), SCAN_TIMEOUT_MS, file.name);
-      if (cancelRef.current) return { saved: 0, failReason: null };
-
-      const docLabel = DOC_TYPE_LABELS[result.document_type] || "เอกสาร";
-      const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
-      if (isDuplicateResult(result)) {
-        toast.info(`ข้ามซ้ำ: ${result.store_name || docLabel}${totalStr}`);
-        onProgress();
-        return { saved: 0, failReason: null };
-      }
-      try {
-        autoSaveResult(result, undefined, profile);
-        toast.success(`✅ ${result.store_name || docLabel}${totalStr}`);
-      } catch (saveErr: any) {
-        onProgress();
-        return { saved: 0, failReason: saveErr.message };
-      }
-      onProgress();
-      return { saved: 1, failReason: null };
-    }
-  } catch (err: any) {
-    onProgress();
-    if (cancelRef.current) return { saved: 0, failReason: null };
-    return { saved: 0, failReason: err.message };
+  if (isServerSyncAvailable()) {
+    syncReceiptToServer(receipt).then((imageUrl) => {
+      updateReceipt(receipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
+    }).catch(console.error);
   }
 }
 
@@ -181,9 +169,15 @@ export interface UseBatchScanReturn {
   isBatchScanning: boolean;
   batchProgress: number;
   batchTotal: number;
-  failedFiles: { name: string; reason: string }[];
+  batchCurrentFile: string;
+  failedFiles: { name: string; reason: string; file: File }[];
+  pendingReview: PendingReviewItem[];
+  reviewTotal: number;
+  saveReviewedItem: (item: PendingReviewItem, edits: ReviewEdits) => void;
+  skipReviewItem: (item: PendingReviewItem) => void;
   batchInputRef: React.RefObject<HTMLInputElement>;
-  handleBatchFiles: (files: FileList) => Promise<void>;
+  handleBatchFiles: (files: FileList | File[]) => Promise<void>;
+  retryFailed: () => Promise<void>;
   cancelBatch: () => void;
 }
 
@@ -191,65 +185,213 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
   const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchTotal, setBatchTotal] = useState(0);
-  const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string }[]>([]);
+  const [batchCurrentFile, setBatchCurrentFile] = useState("");
+  const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string; file: File }[]>([]);
+  const [pendingReview, setPendingReview] = useState<PendingReviewItem[]>([]);
+  const [reviewTotal, setReviewTotal] = useState(0);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
 
-  const cancelBatch = useCallback(() => {
-    cancelRef.current = true;
-  }, []);
+  const cancelBatch = useCallback(() => { cancelRef.current = true; }, []);
 
-  const handleBatchFiles = useCallback(async (files: FileList) => {
-    if (files.length === 0) return;
-
-    const fileArray = Array.from(files);
+  const runBatch = useCallback(async (fileArray: File[]) => {
     cancelRef.current = false;
     setFailedFiles([]);
+    setPendingReview([]);
+    setReviewTotal(0);
     setBatchTotal(fileArray.length);
     setBatchProgress(0);
+    setBatchCurrentFile("");
     setIsBatchScanning(true);
 
     let savedCount = 0;
     let doneCount = 0;
-    const failed: { name: string; reason: string }[] = [];
+    const failed: { name: string; reason: string; file: File }[] = [];
+    const toReview: PendingReviewItem[] = [];
 
-    const onProgress = () => {
+    // แยก PDF ออกจากรูปภาพ
+    const pdfs = fileArray.filter((f) => f.type === "application/pdf");
+    const images = fileArray.filter((f) => f.type !== "application/pdf");
+
+    // ─── ประมวลผล PDF ทีละไฟล์ ───
+    for (const file of pdfs) {
+      if (cancelRef.current) break;
+      setBatchCurrentFile(file.name);
+      try {
+        const base64 = await fileToBase64(file);
+        const results = await scanPDF(base64);
+        let saved = 0, skipped = 0;
+        for (const result of results) {
+          if (isDuplicateResult(result)) { skipped++; continue; }
+          autoSaveResult(result, undefined, profile);
+          saved++;
+          savedCount++;
+        }
+        if (skipped > 0) toast.info(`PDF "${file.name}": บันทึก ${saved} ใบ (ข้าม ${skipped} ซ้ำ)`);
+        else toast.success(`PDF "${file.name}": พบ ${results.length} ใบเสร็จ ✅`);
+      } catch (err: any) {
+        failed.push({ name: file.name, reason: err.message, file });
+        toast.error(`❌ PDF "${file.name}": ${err.message.slice(0, 60)}`);
+      }
       doneCount++;
       setBatchProgress(doneCount);
-    };
-
-    for (let i = 0; i < fileArray.length; i += CONCURRENT_LIMIT) {
-      if (cancelRef.current) break;
-      const chunk = fileArray.slice(i, i + CONCURRENT_LIMIT);
-      const results = await Promise.all(
-        chunk.map((file) => processFile(file, profile, onProgress, cancelRef))
-      );
-      for (let j = 0; j < results.length; j++) {
-        const { saved, failReason } = results[j];
-        savedCount += saved;
-        if (failReason) failed.push({ name: chunk[j].name, reason: failReason });
-      }
-      if (i + CONCURRENT_LIMIT < fileArray.length && !cancelRef.current) {
-        await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+      if (!cancelRef.current && pdfs.indexOf(file) < pdfs.length - 1) {
+        await new Promise((r) => setTimeout(r, PDF_DELAY_MS));
       }
     }
 
+    // ─── ประมวลผลรูปภาพ แบบ Group ───
+    // กลุ่มละ BATCH_GROUP_SIZE รูป → 1 Gemini request
+    for (let gi = 0; gi < images.length; gi += BATCH_GROUP_SIZE) {
+      if (cancelRef.current) break;
+
+      const group = images.slice(gi, gi + BATCH_GROUP_SIZE);
+      const groupLabel = group.map((f) => f.name).join(", ");
+      setBatchCurrentFile(`กลุ่ม ${Math.floor(gi / BATCH_GROUP_SIZE) + 1}: ${group[0].name}${group.length > 1 ? ` +${group.length - 1} รูป` : ""}`);
+
+      try {
+        // compress และ encode ทุกรูปในกลุ่ม
+        const imagePayloads: Array<{ mimeType: string; base64: string; file: File; imageData: string }> = [];
+        for (const file of group) {
+          const raw = await fileToBase64(file);
+          const match = raw.match(/^data:(image\/\w+);base64,(.+)$/);
+          if (!match) { failed.push({ name: file.name, reason: "รูปแบบไฟล์ไม่ถูกต้อง", file }); continue; }
+          let compressed = raw;
+          try { compressed = await compressImage(raw, 1200, 0.7); } catch { /* ใช้ต้นฉบับ */ }
+          const compMatch = compressed.match(/^data:(image\/\w+);base64,(.+)$/);
+          if (!compMatch) continue;
+          imagePayloads.push({ mimeType: compMatch[1], base64: compMatch[2], file, imageData: compressed });
+        }
+
+        if (imagePayloads.length === 0) {
+          doneCount += group.length;
+          setBatchProgress(doneCount);
+          continue;
+        }
+
+        // ส่งทั้งกลุ่มใน 1 request
+        toast.info(`🤖 กำลังสแกนกลุ่มที่ ${Math.floor(gi / BATCH_GROUP_SIZE) + 1} (${imagePayloads.length} รูป)...`);
+        const results = await scanBatch(
+          imagePayloads.map((p) => ({ mimeType: p.mimeType, base64: p.base64 }))
+        );
+
+        // จับคู่ผลลัพธ์กับไฟล์
+        for (let k = 0; k < imagePayloads.length; k++) {
+          const { file, imageData } = imagePayloads[k];
+          const result = results[k];
+          if (!result) { failed.push({ name: file.name, reason: "ไม่ได้รับผลลัพธ์", file }); continue; }
+
+          const scannedYear = result.date ? parseInt(result.date.slice(0, 4), 10) : 0;
+          const currentYear = new Date().getFullYear();
+          const isYearSuspicious = scannedYear > 0 && (scannedYear < 2010 || scannedYear > currentYear + 1);
+
+          // ข้ามถ้าซ้ำ
+          if (isDuplicateResult(result)) {
+            const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
+            toast.info(`ข้ามซ้ำ: ${result.store_name || file.name}${totalStr}`);
+            continue;
+          }
+
+          // Low confidence หรือปีผิด → รอ review
+          if (result.confidence === "low" || isYearSuspicious) {
+            const reason = isYearSuspicious ? `ปี ${scannedYear} ดูผิดปกติ` : "AI ไม่มั่นใจ";
+            toast.warning(`⚠️ ${file.name}: ${reason} — รอตรวจสอบ`);
+            toReview.push({ id: crypto.randomUUID(), fileName: file.name, imageData, result });
+            continue;
+          }
+
+          // High/Medium → auto-save
+          try {
+            autoSaveResult(result, undefined, profile);
+            const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
+            toast.success(`✅ ${result.store_name || file.name}${totalStr}`);
+            savedCount++;
+          } catch (saveErr: any) {
+            failed.push({ name: file.name, reason: saveErr.message, file });
+          }
+        }
+
+      } catch (err: any) {
+        // ทั้ง group fail → นับเป็น failed ทุกไฟล์ใน group
+        toast.error(`❌ กลุ่ม "${groupLabel.slice(0, 50)}": ${err.message.slice(0, 60)}`);
+        for (const file of group) {
+          failed.push({ name: file.name, reason: err.message, file });
+        }
+      }
+
+      doneCount += group.length;
+      setBatchProgress(doneCount);
+
+      // หน่วงระหว่าง group
+      if (gi + BATCH_GROUP_SIZE < images.length && !cancelRef.current) {
+        await new Promise((r) => setTimeout(r, GROUP_DELAY_MS));
+      }
+    }
+
+    // ─── เสร็จแล้ว ───
     setIsBatchScanning(false);
     setBatchProgress(0);
     setBatchTotal(0);
+    setBatchCurrentFile("");
     setFailedFiles(failed);
+
+    if (toReview.length > 0) {
+      setPendingReview(toReview);
+      setReviewTotal(toReview.length);
+    }
+
     if (batchInputRef.current) batchInputRef.current.value = "";
 
     if (cancelRef.current) {
       toast.info(`ยกเลิกแล้ว (บันทึกไปแล้ว ${savedCount} ใบ)`);
-    } else if (failed.length > 0) {
-      toast.warning(`บันทึก ${savedCount} ใบ, สแกนไม่สำเร็จ ${failed.length} ไฟล์`);
-    } else if (savedCount > 0) {
-      toast.success(`บันทึกอัตโนมัติ ${savedCount} ใบเสร็จเรียบร้อย! ✅`);
+    } else {
+      const reviewMsg = toReview.length > 0 ? `, รอตรวจ ${toReview.length} ใบ ⚠️` : "";
+      const failMsg = failed.length > 0 ? `, ล้มเหลว ${failed.length} ไฟล์` : "";
+      if (savedCount > 0 || toReview.length > 0) {
+        if (toReview.length > 0) {
+          toast.warning(`บันทึก ${savedCount} ใบ${reviewMsg}${failMsg}`);
+        } else {
+          toast.success(`บันทึก ${savedCount} ใบเรียบร้อย! ✅${failMsg}`);
+        }
+      } else if (failed.length > 0) {
+        toast.error(`สแกนไม่สำเร็จทั้งหมด ${failed.length} ไฟล์ — ลองกด "ลองใหม่"`);
+      }
     }
 
     if (savedCount > 0) onComplete();
   }, [profile, onComplete]);
 
-  return { isBatchScanning, batchProgress, batchTotal, failedFiles, batchInputRef, handleBatchFiles, cancelBatch };
+  const handleBatchFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.isArray(files) ? files : Array.from(files);
+    if (fileArray.length === 0) return;
+    await runBatch(fileArray);
+  }, [runBatch]);
+
+  const retryFailed = useCallback(async () => {
+    if (failedFiles.length === 0) return;
+    await runBatch(failedFiles.map((f) => f.file));
+  }, [failedFiles, runBatch]);
+
+  const saveReviewedItem = useCallback((item: PendingReviewItem, edits: ReviewEdits) => {
+    try {
+      saveReviewedResult(item.result, item.imageData, profile, edits);
+      toast.success(`✅ บันทึก: ${edits.storeName || "ใบเสร็จ"} ฿${edits.grandTotal.toLocaleString("th-TH")}`);
+      onComplete();
+    } catch (err: any) {
+      toast.error("บันทึกไม่สำเร็จ: " + err.message);
+    }
+    setPendingReview((prev) => prev.filter((p) => p.id !== item.id));
+  }, [profile, onComplete]);
+
+  const skipReviewItem = useCallback((item: PendingReviewItem) => {
+    toast.info(`ข้าม: ${item.fileName}`);
+    setPendingReview((prev) => prev.filter((p) => p.id !== item.id));
+  }, []);
+
+  return {
+    isBatchScanning, batchProgress, batchTotal, batchCurrentFile,
+    failedFiles, pendingReview, reviewTotal,
+    saveReviewedItem, skipReviewItem,
+    batchInputRef, handleBatchFiles, retryFailed, cancelBatch,
+  };
 }

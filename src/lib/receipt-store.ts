@@ -187,6 +187,47 @@ export function compactImageStorage(): { count: number; savedMB: string } {
   return { count, savedMB: (savedBytes / 1024 / 1024).toFixed(1) };
 }
 
+/** Normalize ชื่อร้านเพื่อเปรียบเทียบ fuzzy */
+function normalizeStoreName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/จำกัด|บจก\.?|บมจ\.?|co\.?ltd\.?|limited|inc\.?|corp\.?/gi, "")
+    .replace(/[^\wก-๙]/g, "");
+}
+
+/** คำนวณ Levenshtein distance */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const m = a.length, n = b.length;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = i;
+    for (let j = 1; j <= n; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : 1 + Math.min(row[j - 1], row[j], prev);
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[n] = prev;
+  }
+  return row[n];
+}
+
+/** เปรียบเทียบชื่อร้านแบบ fuzzy (ยอมรับความต่าง 25%) */
+export function isSimilarStoreName(a: string, b: string): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const na = normalizeStoreName(a);
+  const nb = normalizeStoreName(b);
+  if (!na && !nb) return true;
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const maxLen = Math.max(na.length, nb.length);
+  return levenshtein(na, nb) / maxLen <= 0.25;
+}
+
 /**
  * หาและลบใบเสร็จซ้ำ: storeName + date + grandTotal ตรงกัน → เก็บอันเก่าสุด ลบที่เหลือ
  * คืนจำนวนที่ลบออก
@@ -201,11 +242,19 @@ export function removeDuplicateReceipts(): { count: number; syncedIds: string[] 
   );
 
   for (const r of sorted) {
-    const key = `${r.storeName.trim().toLowerCase()}|${r.date}|${r.grandTotal}`;
-    if (seen.has(key)) {
+    // Fuzzy: หา key ที่ store name คล้ายกัน + วันที่ + ยอดรวมตรงกัน
+    let foundKey: string | null = null;
+    for (const [seenKey] of seen) {
+      const [seenStore, seenDate, seenTotal] = seenKey.split("|");
+      if (seenDate === r.date && seenTotal === String(r.grandTotal) && isSimilarStoreName(seenStore, r.storeName.trim())) {
+        foundKey = seenKey;
+        break;
+      }
+    }
+    if (foundKey) {
       toDelete.add(r.id);
     } else {
-      seen.set(key, r.id);
+      seen.set(`${r.storeName.trim()}|${r.date}|${r.grandTotal}`, r.id);
     }
   }
 

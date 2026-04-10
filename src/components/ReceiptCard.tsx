@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp, ImageIcon, Copy, Trash2, FileText, Pencil, ExternalLink } from "lucide-react";
 import { type Receipt, TAG_COLORS, CATEGORY_COLORS } from "@/lib/receipt-store";
+import { isServerSyncAvailable } from "@/lib/server-sync";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   receipt: "ใบเสร็จ",
@@ -34,6 +35,11 @@ interface ReceiptCardProps {
 }
 
 export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete, onDuplicate, onEdit }: ReceiptCardProps) {
+  const savedDate = r.createdAt ? r.createdAt.slice(0, 10) : null;
+  const isDifferentDay = savedDate && savedDate !== r.date;
+  const serverAvailable = isServerSyncAvailable();
+  const isUnsynced = serverAvailable && r.synced === false;
+
   return (
     <Card className="receipt-shadow overflow-hidden transition-all">
       <CardContent className="p-4">
@@ -53,12 +59,23 @@ export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete
               <Badge variant="outline" className={`text-xs ${TAG_COLORS[r.tag] || ""}`}>
                 {r.tag}
               </Badge>
+              {isUnsynced && (
+                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-600 border-amber-200">
+                  ⚠ ยังไม่ sync
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {r.date}
+              📅 {r.date}
               {r.storeName && <span> · {r.storeName}</span>}
               {r.project && <span> · {r.project}</span>}
             </p>
+            {/* แสดงวันที่บันทึกถ้าต่างจากวันที่ในใบเสร็จ */}
+            {isDifferentDay && (
+              <p className="text-xs text-muted-foreground/70 mt-0.5">
+                🕐 บันทึก {savedDate}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="font-bold font-display text-primary">฿{r.grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>

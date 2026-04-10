@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import SyncButton from "@/components/SyncButton";
-import FilterBar, { type SortKey } from "@/components/FilterBar";
+import FilterBar, { type SortKey, type DateMode } from "@/components/FilterBar";
 import ReceiptCard from "@/components/ReceiptCard";
 import ReceiptEmptyState from "@/components/ReceiptEmptyState";
-import { type Receipt, type Profile, deleteReceipt, downloadCSV } from "@/lib/receipt-store";
-import { isServerSyncAvailable, deleteReceiptFromServer } from "@/lib/server-sync";
+import { type Receipt, type Profile, deleteReceipt, downloadCSV, updateReceipt } from "@/lib/receipt-store";
+import { isServerSyncAvailable, deleteReceiptFromServer, syncReceiptToServer } from "@/lib/server-sync";
 import { toast } from "sonner";
 
 interface ReceiptListProps {
@@ -27,52 +27,133 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
   const [filterDocType, setFilterDocType] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [sortBy, setSortBy] = useState<SortKey>("date");
+  const [sortBy, setSortBy] = useState<SortKey>("createdAt");
+  const [dateMode, setDateMode] = useState<DateMode>("saved");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  let filtered = receipts.filter((r) => r.profile === profile);
+  // กรองตาม profile + ซ่อนรายการที่กำลังรอลบ (undo window)
+  let filtered = receipts.filter((r) => r.profile === profile && !pendingDeleteIds.has(r.id));
 
+  // ค้นหา
   if (search) {
     const q = search.toLowerCase();
     filtered = filtered.filter(
       (r) =>
         r.title.toLowerCase().includes(q) ||
         r.description.toLowerCase().includes(q) ||
-        r.category.includes(search) ||
-        r.storeName?.toLowerCase().includes(q) ||
-        r.project?.toLowerCase().includes(q)
+        r.category.toLowerCase().includes(q) ||
+        (r.storeName?.toLowerCase().includes(q) ?? false) ||
+        (r.project?.toLowerCase().includes(q) ?? false) ||
+        (r.tag?.toLowerCase().includes(q) ?? false)
     );
   }
+
   if (filterCategory !== "all") filtered = filtered.filter((r) => r.category === filterCategory);
   if (filterTag !== "all") filtered = filtered.filter((r) => r.tag === filterTag);
   if (filterDocType !== "all") filtered = filtered.filter((r) => r.documentType === filterDocType);
-  if (dateFrom) filtered = filtered.filter((r) => r.date >= dateFrom);
-  if (dateTo) filtered = filtered.filter((r) => r.date <= dateTo);
 
-  filtered.sort((a, b) => sortBy === "amount" ? b.grandTotal - a.grandTotal : b.date.localeCompare(a.date));
+  if (dateFrom || dateTo) {
+    filtered = filtered.filter((r) => {
+      const fieldDate = dateMode === "saved"
+        ? (r.createdAt ?? r.date).slice(0, 10)
+        : r.date;
+      if (dateFrom && fieldDate < dateFrom) return false;
+      if (dateTo && fieldDate > dateTo) return false;
+      return true;
+    });
+  }
 
-  // Reset pagination เมื่อ filter/search เปลี่ยน
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, filterCategory, filterTag, filterDocType, dateFrom, dateTo, sortBy, profile]);
+  filtered.sort((a, b) => {
+    if (sortBy === "amount") return b.grandTotal - a.grandTotal;
+    if (sortBy === "createdAt") return (b.createdAt ?? b.date).localeCompare(a.createdAt ?? a.date);
+    return b.date.localeCompare(a.date);
+  });
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, filterCategory, filterTag, filterDocType, dateFrom, dateTo, sortBy, dateMode, profile]);
 
   const totalAll = filtered.reduce((sum, r) => sum + r.grandTotal, 0);
   const visibleReceipts = filtered.slice(0, visibleCount);
   const profileLabel = profile === "personal" ? "ส่วนตัว" : "บริษัท";
 
-  const handleDelete = (id: string) => {
-    deleteReceipt(id);
-    toast.success("ลบใบเสร็จแล้ว");
-    onChanged();
-    if (isServerSyncAvailable()) {
-      deleteReceiptFromServer(id).catch((err) => console.error("Delete sync error:", err));
+  // รายการที่ยังไม่ sync
+  const unsyncedList = filtered.filter((r) => !r.synced);
+  const serverAvailable = isServerSyncAvailable();
+
+  // ลบแบบ Undo (optimistic UI + 5 วินาที)
+  const handleDelete = useCallback((id: string) => {
+    const receipt = receipts.find((r) => r.id === id);
+    if (!receipt) return;
+
+    // ซ่อนจาก UI ทันที
+    setPendingDeleteIds((prev) => new Set([...prev, id]));
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      deleteReceipt(id);
+      setPendingDeleteIds((prev) => {
+        const s = new Set(prev);
+        s.delete(id);
+        return s;
+      });
+      onChanged();
+      if (serverAvailable) {
+        deleteReceiptFromServer(id).catch((err) => console.error("Delete sync error:", err));
+      }
+    }, 5000);
+
+    toast(`ลบ "${receipt.title}" แล้ว`, {
+      description: "กด ↩ ยกเลิก ภายใน 5 วินาที",
+      action: {
+        label: "↩ ยกเลิก",
+        onClick: () => {
+          cancelled = true;
+          clearTimeout(timeoutId);
+          setPendingDeleteIds((prev) => {
+            const s = new Set(prev);
+            s.delete(id);
+            return s;
+          });
+          toast.success("ยกเลิกการลบแล้ว");
+        },
+      },
+      duration: 5000,
+    });
+  }, [receipts, onChanged, serverAvailable]);
+
+  // Sync ทั้งหมดที่ค้าง
+  const handleSyncAll = useCallback(async () => {
+    if (!serverAvailable || unsyncedList.length === 0) return;
+    setIsSyncingAll(true);
+    let ok = 0;
+    let fail = 0;
+    for (const r of unsyncedList) {
+      try {
+        const imageUrl = await syncReceiptToServer(r);
+        updateReceipt(r.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
+        ok++;
+      } catch {
+        fail++;
+      }
     }
-  };
+    setIsSyncingAll(false);
+    onChanged();
+    if (fail > 0) toast.warning(`Sync สำเร็จ ${ok} ใบ, ไม่สำเร็จ ${fail} ใบ`);
+    else toast.success(`Sync สำเร็จทั้งหมด ${ok} ใบ ✅`);
+  }, [unsyncedList, serverAvailable, onChanged]);
 
   return (
     <div className="space-y-4 fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">ประวัติใบเสร็จ ({profileLabel})</h2>
-          <p className="text-sm text-muted-foreground">{filtered.length} รายการ · รวม ฿{totalAll.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+          <p className="text-sm text-muted-foreground">
+            {filtered.length} รายการ · รวม ฿{totalAll.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+          </p>
         </div>
         {filtered.length > 0 && (
           <Button variant="outline" size="sm" onClick={() => downloadCSV(filtered, profileLabel)}>
@@ -80,6 +161,29 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
           </Button>
         )}
       </div>
+
+      {/* แถบแจ้งเตือน sync ค้าง */}
+      {serverAvailable && unsyncedList.length > 0 && (
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-amber-50 rounded-lg border border-amber-200">
+          <p className="text-sm text-amber-700">
+            ⚠️ {unsyncedList.length} ใบยังไม่ได้ sync ขึ้น Google Sheets
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100 gap-1 shrink-0"
+            onClick={handleSyncAll}
+            disabled={isSyncingAll}
+          >
+            {isSyncingAll ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            Sync ทั้งหมด
+          </Button>
+        </div>
+      )}
 
       <FilterBar
         profile={profile}
@@ -90,12 +194,13 @@ export default function ReceiptList({ receipts, profile, onChanged, onDuplicate,
         dateFrom={dateFrom} onDateFromChange={setDateFrom}
         dateTo={dateTo} onDateToChange={setDateTo}
         sortBy={sortBy} onSortChange={setSortBy}
+        dateMode={dateMode} onDateModeChange={setDateMode}
       />
 
       <SyncButton receipts={filtered} />
 
       {filtered.length === 0 ? (
-        <ReceiptEmptyState hasReceipts={receipts.length > 0} />
+        <ReceiptEmptyState hasReceipts={receipts.filter((r) => r.profile === profile).length > 0} />
       ) : (
         <div className="space-y-2">
           {visibleReceipts.map((r) => (

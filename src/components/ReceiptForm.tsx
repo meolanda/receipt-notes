@@ -6,10 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil, Upload } from "lucide-react";
+import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil, Upload, RefreshCw } from "lucide-react";
 import { TAGS, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 import { useBatchScan } from "@/hooks/useBatchScan";
+import BatchReviewDialog from "@/components/BatchReviewDialog";
 
 interface ReceiptFormProps {
   profile: Profile;
@@ -39,6 +40,17 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
   const isEditing = !!editData;
 
   return (
+    <>
+    {/* Dialog ตรวจสอบ low-confidence receipts หลัง batch scan */}
+    {batch.pendingReview.length > 0 && (
+      <BatchReviewDialog
+        items={batch.pendingReview}
+        reviewTotal={batch.reviewTotal}
+        profile={profile}
+        onSave={batch.saveReviewedItem}
+        onSkip={batch.skipReviewItem}
+      />
+    )}
     <Card className="receipt-shadow fade-in">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
@@ -274,14 +286,19 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
               {batch.isBatchScanning ? (
                 <div className="p-3 bg-muted rounded-lg space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      <p className="text-sm font-medium">กำลังสแกน {batch.batchProgress}/{batch.batchTotal}...</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                      <p className="text-sm font-medium">{batch.batchProgress}/{batch.batchTotal}</p>
                     </div>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={batch.cancelBatch}>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-destructive shrink-0" onClick={batch.cancelBatch}>
                       ยกเลิก
                     </Button>
                   </div>
+                  {batch.batchCurrentFile && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      📄 {batch.batchCurrentFile}
+                    </p>
+                  )}
                   <div className="w-full bg-border rounded-full h-1.5">
                     <div
                       className="bg-primary h-1.5 rounded-full transition-all"
@@ -302,17 +319,33 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                 </Button>
               )}
 
-              {/* แสดงรายการที่ scan ไม่สำเร็จ */}
+              {/* แสดงรายการที่ scan ไม่สำเร็จ + ปุ่มลองใหม่ */}
               {!batch.isBatchScanning && batch.failedFiles.length > 0 && (
-                <div className="mt-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 space-y-1.5">
-                  <p className="text-sm font-medium text-destructive">สแกนไม่สำเร็จ {batch.failedFiles.length} ไฟล์ — เลือกใหม่เพื่อลองอีกครั้ง:</p>
-                  {batch.failedFiles.map((f, i) => (
-                    <div key={i} className="text-xs text-destructive/80 flex gap-1">
-                      <span className="shrink-0">•</span>
-                      <span className="font-medium">{f.name}</span>
-                      <span className="text-muted-foreground truncate">— {f.reason}</span>
-                    </div>
-                  ))}
+                <div className="mt-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-destructive">
+                      ❌ สแกนไม่สำเร็จ {batch.failedFiles.length} ไฟล์
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0 gap-1"
+                      onClick={batch.retryFailed}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      ลองใหม่
+                    </Button>
+                  </div>
+                  <div className="space-y-1">
+                    {batch.failedFiles.map((f, i) => (
+                      <div key={i} className="text-xs text-destructive/80 flex gap-1">
+                        <span className="shrink-0">•</span>
+                        <span className="font-medium truncate">{f.name}</span>
+                        <span className="text-muted-foreground shrink-0">— {f.reason}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -320,5 +353,6 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
         </form>
       </CardContent>
     </Card>
+    </>
   );
 }

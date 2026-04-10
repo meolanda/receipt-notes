@@ -123,6 +123,35 @@ async function callGemini(apiKey: string, model: string, mimeType: string, image
   return JSON.parse(jsonStr);
 }
 
+/** Retry สูงสุด maxAttempts ครั้ง — หยุดเร็วถ้าไม่ใช่ rate limit */
+async function callGeminiWithRetry(
+  apiKey: string,
+  model: string,
+  mimeType: string,
+  imageData: string,
+  maxAttempts = 3
+): Promise<any> {
+  let lastErr: any;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await callGemini(apiKey, model, mimeType, imageData);
+    } catch (err: any) {
+      lastErr = err;
+      const isRateLimit =
+        err.message?.includes("429") ||
+        err.message?.includes("RESOURCE_EXHAUSTED") ||
+        err.message?.includes("quota");
+      if (attempt < maxAttempts - 1 && isRateLimit) {
+        const delay = (attempt + 1) * 5000; // 5s, 10s
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 function isIncomplete(data: any): boolean {
   if (data.document_type === "bank_slip") {
     return !data.recipient_name || !data.date || (!data.amount && data.amount !== 0);
@@ -159,13 +188,13 @@ export default async function handler(req: any, res: any) {
     let modelUsed: string;
 
     if (modelPreference === "flash20") {
-      data = await callGemini(GEMINI_API_KEY, flash20, mimeType, imageData);
+      data = await callGeminiWithRetry(GEMINI_API_KEY, flash20, mimeType, imageData);
       modelUsed = "Gemini 2.0 Flash";
     } else {
-      data = await callGemini(GEMINI_API_KEY, flash25, mimeType, imageData);
+      data = await callGeminiWithRetry(GEMINI_API_KEY, flash25, mimeType, imageData);
       modelUsed = "Gemini 2.5 Flash";
       if (isIncomplete(data)) {
-        data = await callGemini(GEMINI_API_KEY, flash20, mimeType, imageData);
+        data = await callGeminiWithRetry(GEMINI_API_KEY, flash20, mimeType, imageData);
         modelUsed = "Gemini 2.0 Flash";
       }
     }

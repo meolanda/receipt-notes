@@ -79,6 +79,38 @@ function mapToScanResult(data: any, modelUsed = "Gemini"): ScanResult {
   };
 }
 
+/**
+ * ส่งรูปหลายรูปใน 1 request → Gemini วิเคราะห์ทีเดียว
+ * ลด N API calls เหลือ 1 call ป้องกัน rate limit
+ * @param images array ของ { mimeType, base64 } (ไม่รวม data:...;base64, prefix)
+ */
+export async function scanBatch(
+  images: Array<{ mimeType: string; base64: string }>
+): Promise<ScanResult[]> {
+  const settings = getClaudeSettings();
+
+  const res = await fetch("/api/scan-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      images,
+      modelPreference: settings.modelPreference,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    if (err.error === "not_configured") throw new Error("ยังไม่ได้ตั้งค่า GEMINI_API_KEY บน Vercel");
+    throw new Error(`Batch scan error (${res.status}): ${err.error || res.statusText}`);
+  }
+
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  return results.map((r: any) => mapToScanResult(r, data.modelUsed || "Gemini"));
+}
+
 export async function scanPDF(pdfBase64: string): Promise<ScanResult[]> {
   const match = pdfBase64.match(/^data:(application\/pdf);base64,(.+)$/);
   if (!match) throw new Error("Invalid PDF data");
