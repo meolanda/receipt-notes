@@ -67,8 +67,8 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("ไฟล์ใหญ่เกินไป (สูงสุด 5MB)");
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("ไฟล์ใหญ่เกินไป (สูงสุด 20MB)");
       return;
     }
     const reader = new FileReader();
