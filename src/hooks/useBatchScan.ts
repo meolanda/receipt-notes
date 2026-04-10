@@ -6,8 +6,9 @@ import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
 import { DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 
-const CONCURRENT_LIMIT = 3;
-const SCAN_TIMEOUT_MS = 45_000;
+const CONCURRENT_LIMIT = 2;
+const SCAN_TIMEOUT_MS = 60_000;
+const BATCH_DELAY_MS = 1_000; // หน่วงระหว่าง batch เพื่อไม่ให้ hit rate limit
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -109,27 +110,31 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
   }
 }
 
+interface FileResult {
+  saved: number;
+  failReason: string | null; // null = success หรือ skip
+}
+
 async function processFile(
   file: File,
   profile: Profile,
   onProgress: () => void,
   cancelRef: React.MutableRefObject<boolean>
-): Promise<number> {
-  if (cancelRef.current) return 0;
+): Promise<FileResult> {
+  if (cancelRef.current) return { saved: 0, failReason: null };
 
   if (file.size > 20 * 1024 * 1024) {
-    toast.error(`ไฟล์ "${file.name}" ใหญ่เกินไป (สูงสุด 20MB)`);
     onProgress();
-    return 0;
+    return { saved: 0, failReason: "ไฟล์ใหญ่เกินไป (>20MB)" };
   }
 
   try {
     const base64 = await fileToBase64(file);
-    if (cancelRef.current) return 0;
+    if (cancelRef.current) return { saved: 0, failReason: null };
 
     if (file.type === "application/pdf") {
       const results = await withTimeout(scanPDF(base64), SCAN_TIMEOUT_MS, file.name);
-      if (cancelRef.current) return 0;
+      if (cancelRef.current) return { saved: 0, failReason: null };
       let saved = 0, skipped = 0;
       for (const result of results) {
         if (isDuplicateResult(result)) { skipped++; continue; }
@@ -139,39 +144,36 @@ async function processFile(
       if (skipped > 0) toast.info(`PDF "${file.name}": บันทึก ${saved} ใบ (ข้าม ${skipped} ซ้ำ)`);
       else toast.success(`PDF "${file.name}": พบ ${results.length} ใบเสร็จ`);
       onProgress();
-      return saved;
+      return { saved, failReason: null };
     } else {
       let imageData = base64;
       try { imageData = await compressImage(base64, 1200, 0.7); } catch { /* ใช้ต้นฉบับ */ }
-      if (cancelRef.current) return 0;
+      if (cancelRef.current) return { saved: 0, failReason: null };
 
       const result = await withTimeout(scanReceipt(imageData), SCAN_TIMEOUT_MS, file.name);
-      if (cancelRef.current) return 0;
+      if (cancelRef.current) return { saved: 0, failReason: null };
 
       const docLabel = DOC_TYPE_LABELS[result.document_type] || "เอกสาร";
       const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
-      // ตรวจซ้ำก่อนบันทึก
       if (isDuplicateResult(result)) {
         toast.info(`ข้ามซ้ำ: ${result.store_name || docLabel}${totalStr}`);
         onProgress();
-        return 0;
+        return { saved: 0, failReason: null };
       }
-      // ไม่บันทึก imageData ใน batch mode เพื่อประหยัด localStorage
       try {
         autoSaveResult(result, undefined, profile);
         toast.success(`✅ ${result.store_name || docLabel}${totalStr}`);
       } catch (saveErr: any) {
-        toast.error(`บันทึกไม่สำเร็จ (${file.name}): ${saveErr.message}`);
         onProgress();
-        return 0;
+        return { saved: 0, failReason: saveErr.message };
       }
       onProgress();
-      return 1;
+      return { saved: 1, failReason: null };
     }
   } catch (err: any) {
-    if (!cancelRef.current) toast.error(`สแกนไม่สำเร็จ (${file.name}): ${err.message}`);
     onProgress();
-    return 0;
+    if (cancelRef.current) return { saved: 0, failReason: null };
+    return { saved: 0, failReason: err.message };
   }
 }
 
@@ -179,6 +181,7 @@ export interface UseBatchScanReturn {
   isBatchScanning: boolean;
   batchProgress: number;
   batchTotal: number;
+  failedFiles: { name: string; reason: string }[];
   batchInputRef: React.RefObject<HTMLInputElement>;
   handleBatchFiles: (files: FileList) => Promise<void>;
   cancelBatch: () => void;
@@ -212,7 +215,7 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       setBatchProgress(doneCount);
     };
 
-    // ประมวลผล CONCURRENT_LIMIT ไฟล์พร้อมกัน
+    // ประมวลผล CONCURRENT_LIMIT ไฟล์พร้อมกัน หน่วงระหว่าง batch
     for (let i = 0; i < fileArray.length; i += CONCURRENT_LIMIT) {
       if (cancelRef.current) break;
       const chunk = fileArray.slice(i, i + CONCURRENT_LIMIT);
@@ -220,6 +223,9 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
         chunk.map((file) => processFile(file, profile, onProgress, cancelRef))
       );
       savedCount += counts.reduce((a, b) => a + b, 0);
+      if (i + CONCURRENT_LIMIT < fileArray.length && !cancelRef.current) {
+        await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+      }
     }
 
     setIsBatchScanning(false);

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Bot, Save, Shield, Trash2 } from "lucide-react";
 import { getClaudeSettings, saveClaudeSettings, type ClaudeModel } from "@/lib/claude-api";
-import { compactImageStorage, getImageStorageInfo } from "@/lib/receipt-store";
+import { compactImageStorage, getImageStorageInfo, removeDuplicateReceipts } from "@/lib/receipt-store";
 import { toast } from "sonner";
 
 export default function ClaudeSettings() {
@@ -82,6 +82,21 @@ export default function ClaudeSettings() {
             ล้างรูปจาก storage (เพิ่มพื้นที่)
           </Button>
           <p className="text-xs text-muted-foreground">จะลบเฉพาะรูปที่ sync ขึ้น Google Drive แล้ว ข้อมูลยังอยู่ครบ</p>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
+            onClick={() => {
+              const count = removeDuplicateReceipts();
+              if (count === 0) toast.info("ไม่พบใบเสร็จซ้ำ");
+              else toast.success(`ลบซ้ำแล้ว ${count} ใบ (เก็บอันเก่าสุดไว้)`);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            ตรวจและลบใบเสร็จซ้ำ
+          </Button>
+          <p className="text-xs text-muted-foreground">ตรวจจาก: ร้านค้า + วันที่ + ยอดรวม ตรงกัน → ลบอันใหม่ เก็บอันเก่า</p>
         </div>
       </CardContent>
     </Card>

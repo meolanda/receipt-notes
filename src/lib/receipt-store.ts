@@ -187,6 +187,36 @@ export function compactImageStorage(): { count: number; savedMB: string } {
   return { count, savedMB: (savedBytes / 1024 / 1024).toFixed(1) };
 }
 
+/**
+ * หาและลบใบเสร็จซ้ำ: storeName + date + grandTotal ตรงกัน → เก็บอันเก่าสุด ลบที่เหลือ
+ * คืนจำนวนที่ลบออก
+ */
+export function removeDuplicateReceipts(): number {
+  const receipts = getReceipts();
+  const seen = new Map<string, string>(); // key → id ที่เก็บไว้ (เก่าสุด)
+  const toDelete = new Set<string>();
+
+  // เรียงจากเก่าสุดก่อน เพื่อให้ keep อันแรก
+  const sorted = [...receipts].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  for (const r of sorted) {
+    const key = `${r.storeName.trim().toLowerCase()}|${r.date}|${r.grandTotal}`;
+    if (seen.has(key)) {
+      toDelete.add(r.id);
+    } else {
+      seen.set(key, r.id);
+    }
+  }
+
+  if (toDelete.size === 0) return 0;
+
+  const cleaned = receipts.filter((r) => !toDelete.has(r.id));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+  return toDelete.size;
+}
+
 export function getImageStorageInfo(): { withImageCount: number; totalImageMB: string; usedMB: string } {
   const receipts = getReceipts();
   let total = 0;
