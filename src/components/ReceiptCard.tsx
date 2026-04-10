@@ -1,9 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronUp, ImageIcon, Copy, Trash2, FileText, Pencil, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronUp, ImageIcon, Copy, Trash2, FileText, Pencil } from "lucide-react";
 import { type Receipt, TAG_COLORS, CATEGORY_COLORS } from "@/lib/receipt-store";
-import { isServerSyncAvailable } from "@/lib/server-sync";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   receipt: "ใบเสร็จ",
@@ -37,8 +36,6 @@ interface ReceiptCardProps {
 export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete, onDuplicate, onEdit }: ReceiptCardProps) {
   const savedDate = r.createdAt ? r.createdAt.slice(0, 10) : null;
   const isDifferentDay = savedDate && savedDate !== r.date;
-  const serverAvailable = isServerSyncAvailable();
-  const isUnsynced = serverAvailable && r.synced === false;
 
   return (
     <Card className="receipt-shadow overflow-hidden transition-all">
@@ -59,11 +56,6 @@ export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete
               <Badge variant="outline" className={`text-xs ${TAG_COLORS[r.tag] || ""}`}>
                 {r.tag}
               </Badge>
-              {isUnsynced && (
-                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-600 border-amber-200">
-                  ⚠ ยังไม่ sync
-                </Badge>
-              )}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               📅 {r.date}
@@ -87,26 +79,20 @@ export default function ReceiptCard({ receipt: r, isExpanded, onToggle, onDelete
           <div className="mt-3 pt-3 border-t border-border space-y-3 fade-in">
             {r.description && <p className="text-sm text-muted-foreground">{r.description}</p>}
 
-            {r.imageData && (
+            {/* แสดงรูปจาก Firebase Storage หรือ base64 */}
+            {(r.imageUrl || r.imageData) && (
               <div className="flex items-center gap-2">
                 <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                <img src={r.imageData} alt="ใบเสร็จ" className="max-h-40 rounded-md border border-border" />
-              </div>
-            )}
-
-            {!r.imageData && r.imageUrl && (
-              <div className="flex items-center gap-2">
-                <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                <a
-                  href={r.imageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm text-primary hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  ดูรูปใบเสร็จใน Google Drive
-                </a>
+                {r.imageUrl ? (
+                  <img
+                    src={r.imageUrl}
+                    alt="ใบเสร็จ"
+                    className="max-h-40 rounded-md border border-border cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); window.open(r.imageUrl, "_blank"); }}
+                  />
+                ) : r.imageData ? (
+                  <img src={r.imageData} alt="ใบเสร็จ" className="max-h-40 rounded-md border border-border" />
+                ) : null}
               </div>
             )}
 

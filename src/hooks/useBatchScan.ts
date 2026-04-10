@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState } from "react";
-import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, isDuplicateReceipt, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
+import { getCategoriesForProfile, isDuplicateReceipt, type DocumentTypeValue, type Profile, type Receipt } from "@/lib/receipt-store";
+import { saveReceiptFS } from "@/lib/firestore-store";
+import { uploadReceiptImage } from "@/lib/firebase-storage";
 import { scanBatch, scanPDF, type ScanResult } from "@/lib/claude-api";
-import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
 import { DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 
-const BATCH_GROUP_SIZE = 5;    // จำนวนรูปต่อ 1 Gemini request (5 = ปลอดภัยกับ Vercel Hobby 10s)
-const GROUP_DELAY_MS   = 3_000; // หน่วงระหว่าง group ป้องกัน rate limit
+const BATCH_GROUP_SIZE = 5;    // จำนวนรูปต่อ 1 Gemini request
+const GROUP_DELAY_MS   = 3_000; // หน่วงระหว่าง group (rate limit)
 const PDF_DELAY_MS     = 2_000; // หน่วงระหว่าง PDF
 
 // ข้อมูลที่ผู้ใช้แก้ไขในหน้า review
@@ -43,19 +44,18 @@ function autoTitle(result: ScanResult): string {
   return storePart ? storePart : `${docLabel} ${dateStr}`;
 }
 
-function isDuplicateResult(result: ScanResult, profile: Profile): boolean {
+function isDuplicateResult(result: ScanResult, profile: Profile, existingReceipts: Receipt[]): boolean {
   const grandTotal = result.total || 0;
   const date = result.date || new Date().toISOString().slice(0, 10);
   const storeName = (result.store_name || result.recipient_name || "").trim();
-  // ตรวจแค่ใน 30 วันล่าสุด เพื่อประสิทธิภาพ
+  // ตรวจแค่ใน 30 วันล่าสุด
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const recent = getReceipts().filter((r) => new Date(r.createdAt).getTime() >= cutoff);
+  const recent = existingReceipts.filter((r) => new Date(r.createdAt).getTime() >= cutoff);
   return isDuplicateReceipt({ date, grandTotal, storeName, profile }, recent);
 }
 
 /**
  * เดา category จาก store name + items + document_type
- * ใช้ pattern matching ภาษาไทยและอังกฤษที่พบบ่อย
  */
 function smartGuessCategory(result: ScanResult, available: string[]): string {
   const has = (cat: string) => available.includes(cat);
@@ -64,34 +64,20 @@ function smartGuessCategory(result: ScanResult, available: string[]): string {
     ...(result.items || []).map((i) => i.name),
   ].filter(Boolean).join(" ").toLowerCase();
 
-  // อาหาร/เครื่องดื่ม
   if (has("อาหาร") && /kfc|mcdonald|burger|pizza|starbucks|cafe|coffee|ชา|กาแฟ|อาหาร|ร้านอาหาร|ข้าว|ก๋วยเตี๋ยว|ส้มตำ|ไก่|หมู|seafood|sushi/.test(text)) return "อาหาร";
   if (result.document_type === "market_bill" && has("อาหาร")) return "อาหาร";
-
-  // ขนส่ง/โลจิสติกส์
   if (has("ขนส่ง") && /lalamove|grab|kerry|flash|ไปรษณีย์|จัดส่ง|ขนส่ง|delivery|logistics|shippop|dhl|fedex|scg/.test(text)) return "ขนส่ง";
-
-  // อะไหล่/วัสดุ (เหมาะกับธุรกิจแอร์)
   if (has("อะไหล่") && /อะไหล่|spare|compressor|refrigerant|r410|r22|r32|freon|pump|valve|motor|pcb|inverter|บราก|เทป|ท่อ|น้ำยา|แอร์|air|coil|fan|filter|sensor|relay|capacitor|contactor|fuse/.test(text)) return "อะไหล่";
-
-  // ค่าน้ำ/ไฟ/สาธารณูปโภค
   if (has("ค่าน้ำ/ไฟ") && /การไฟฟ้า|ประปา|pea|mea|electricity|water|ค่าไฟ|ค่าน้ำ|true|ais|dtac|internet|wifi|โทรศัพท์/.test(text)) return "ค่าน้ำ/ไฟ";
-
-  // สุขภาพ
   if (has("สุขภาพ") && /hospital|clinic|pharmacy|โรงพยาบาล|คลินิก|ร้านขายยา|ยา|วิตามิน|dental|doctor/.test(text)) return "สุขภาพ";
-
-  // ช้อปปิ้ง
   if (has("ช้อปปิ้ง") && /lazada|shopee|amazon|central|robinson|homepro|bigc|lotus|makro|tesco|tops/.test(text)) return "ช้อปปิ้ง";
-
-  // ท่องเที่ยว/ที่พัก
-  if (has("ท่องเที่ยว") && /hotel|resort|motel|hostel|airbnb|agoda|booking|โรงแรม|ที่พัก|resort/.test(text)) return "ท่องเที่ยว";
+  if (has("ท่องเที่ยว") && /hotel|resort|motel|hostel|airbnb|agoda|booking|โรงแรม|ที่พัก/.test(text)) return "ท่องเที่ยว";
 
   return available[0] || "อื่นๆ";
 }
 
 /**
- * แก้ปีอัตโนมัติถ้า OCR อ่านปีผิด (เช่น 2021→2026, 2023→2026)
- * คืนค่า { date, corrected } — corrected=true ถ้ามีการแก้
+ * แก้ปีอัตโนมัติถ้า OCR อ่านปีผิด
  */
 function autoCorrectYear(dateStr: string | null): { date: string; corrected: boolean; originalYear?: number } {
   if (!dateStr) return { date: new Date().toISOString().slice(0, 10), corrected: false };
@@ -106,8 +92,15 @@ function autoCorrectYear(dateStr: string | null): { date: string; corrected: boo
   return { date: dateStr, corrected: false };
 }
 
-/** Auto-save สำหรับ high/medium confidence */
-function autoSaveResult(result: ScanResult, imageData: string | undefined, profile: Profile): { yearCorrected: boolean; originalYear?: number } {
+/**
+ * Auto-save สำหรับ high/medium confidence → Firestore + Storage
+ */
+async function autoSaveResult(
+  result: ScanResult,
+  imageData: string | undefined,
+  profile: Profile,
+  uid: string
+): Promise<{ yearCorrected: boolean; originalYear?: number }> {
   const categories = getCategoriesForProfile(profile);
   const category = smartGuessCategory(result, categories);
 
@@ -126,6 +119,7 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
     : [{ name: autoTitle(result), quantity: 1, price: grandTotal }];
 
   const tag = profile === "company" ? "บริษัท" as const : "ส่วนตัว" as const;
+
   let description = "";
   if (result.document_type === "bank_slip") {
     const parts = [`Ref: ${result.reference_id || "-"}`];
@@ -141,7 +135,8 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
 
   const { date: correctedDate, corrected, originalYear } = autoCorrectYear(result.date);
 
-  const receipt = saveReceipt({
+  // บันทึกลง Firestore (ไม่มี imageData — เก็บใน Storage แยก)
+  const saved = await saveReceiptFS(uid, {
     profile,
     title: autoTitle(result),
     storeName: result.store_name || result.recipient_name || "",
@@ -156,25 +151,27 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
     items: items.filter((i) => i.name.trim()),
     project: "",
     reimbursementNote: "",
-    imageData,
     documentType: result.document_type as DocumentTypeValue,
   });
 
-  if (isServerSyncAvailable()) {
-    syncReceiptToServer(receipt).then((imageUrl) => {
-      updateReceipt(receipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
-    }).catch(console.error);
+  // อัปโหลดรูป → Storage (ทำ background ไม่ block)
+  if (imageData) {
+    uploadReceiptImage(uid, saved.id, imageData).catch((err) =>
+      console.error("[batch] upload image error:", err)
+    );
   }
+
   return { yearCorrected: corrected, originalYear };
 }
 
 /** บันทึกหลังผู้ใช้ review และแก้ไขแล้ว */
-export function saveReviewedResult(
+export async function saveReviewedResult(
   result: ScanResult,
   imageData: string,
   profile: Profile,
-  edits: ReviewEdits
-): void {
+  edits: ReviewEdits,
+  uid: string
+): Promise<void> {
   const vatAmount = result.vat != null ? Number(result.vat) : 0;
   const totalAmount = Math.max(0, edits.grandTotal - vatAmount);
   const originalTotal = result.total || 1;
@@ -190,7 +187,7 @@ export function saveReviewedResult(
 
   const tag = profile === "company" ? "บริษัท" as const : "ส่วนตัว" as const;
 
-  const receipt = saveReceipt({
+  const saved = await saveReceiptFS(uid, {
     profile,
     title: edits.storeName || autoTitle(result),
     storeName: edits.storeName,
@@ -205,23 +202,23 @@ export function saveReviewedResult(
     items: items.filter((i) => i.name.trim()),
     project: "",
     reimbursementNote: "",
-    imageData,
     documentType: result.document_type as DocumentTypeValue,
   });
 
-  if (isServerSyncAvailable()) {
-    syncReceiptToServer(receipt).then((imageUrl) => {
-      updateReceipt(receipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
-    }).catch(console.error);
+  // อัปโหลดรูป background
+  if (imageData) {
+    uploadReceiptImage(uid, saved.id, imageData).catch((err) =>
+      console.error("[review] upload image error:", err)
+    );
   }
 }
 
 export interface BatchSummary {
   saved: number;
-  skipped: number;       // ซ้ำ
-  review: number;        // รอตรวจ
+  skipped: number;    // ซ้ำ
+  review: number;     // รอตรวจ
   failed: number;
-  yearFixed: number;     // แก้ปีอัตโนมัติ
+  yearFixed: number;  // แก้ปีอัตโนมัติ
 }
 
 export interface UseBatchScanReturn {
@@ -234,7 +231,7 @@ export interface UseBatchScanReturn {
   reviewTotal: number;
   batchSummary: BatchSummary | null;
   clearSummary: () => void;
-  saveReviewedItem: (item: PendingReviewItem, edits: ReviewEdits) => void;
+  saveReviewedItem: (item: PendingReviewItem, edits: ReviewEdits) => Promise<void>;
   skipReviewItem: (item: PendingReviewItem) => void;
   batchInputRef: React.RefObject<HTMLInputElement>;
   handleBatchFiles: (files: FileList | File[]) => Promise<void>;
@@ -242,7 +239,12 @@ export interface UseBatchScanReturn {
   cancelBatch: () => void;
 }
 
-export function useBatchScan(profile: Profile, onComplete: () => void): UseBatchScanReturn {
+export function useBatchScan(
+  profile: Profile,
+  uid: string,
+  receipts: Receipt[],
+  onComplete: () => void
+): UseBatchScanReturn {
   const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchTotal, setBatchTotal] = useState(0);
@@ -255,7 +257,6 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
   const cancelRef = useRef(false);
 
   const clearSummary = useCallback(() => setBatchSummary(null), []);
-
   const cancelBatch = useCallback(() => { cancelRef.current = true; }, []);
 
   const runBatch = useCallback(async (fileArray: File[]) => {
@@ -269,17 +270,19 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
     setIsBatchScanning(true);
 
     let savedCount = 0;
-    let skippedCount = 0;  // ซ้ำ
-    let yearFixedCount = 0; // แก้ปีอัตโนมัติ
+    let skippedCount = 0;
+    let yearFixedCount = 0;
     let doneCount = 0;
     const failed: { name: string; reason: string; file: File }[] = [];
     const toReview: PendingReviewItem[] = [];
 
-    // แยก PDF ออกจากรูปภาพ
+    // snapshot ของ receipts ณ เวลา batch start (ป้องกัน race condition)
+    const existingReceipts = [...receipts];
+
     const pdfs = fileArray.filter((f) => f.type === "application/pdf");
     const images = fileArray.filter((f) => f.type !== "application/pdf");
 
-    // ─── ประมวลผล PDF ทีละไฟล์ ───
+    // ─── PDF ───
     for (const file of pdfs) {
       if (cancelRef.current) break;
       setBatchCurrentFile(file.name);
@@ -288,8 +291,8 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
         const results = await scanPDF(base64);
         let saved = 0, skipped = 0;
         for (const result of results) {
-          if (isDuplicateResult(result, profile)) { skipped++; continue; }
-          autoSaveResult(result, undefined, profile);
+          if (isDuplicateResult(result, profile, existingReceipts)) { skipped++; skippedCount++; continue; }
+          await autoSaveResult(result, undefined, profile, uid);
           saved++;
           savedCount++;
         }
@@ -306,19 +309,15 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       }
     }
 
-    // ─── ประมวลผลรูปภาพ แบบ Group ───
-    // กลุ่มละ BATCH_GROUP_SIZE รูป → 1 Gemini request
+    // ─── รูปภาพ (แบบ group) ───
     for (let gi = 0; gi < images.length; gi += BATCH_GROUP_SIZE) {
       if (cancelRef.current) break;
 
       const group = images.slice(gi, gi + BATCH_GROUP_SIZE);
-      const groupLabel = group.map((f) => f.name).join(", ");
       setBatchCurrentFile(`กลุ่ม ${Math.floor(gi / BATCH_GROUP_SIZE) + 1}: ${group[0].name}${group.length > 1 ? ` +${group.length - 1} รูป` : ""}`);
 
-      // ย้าย imagePayloads ออกนอก try → catch สามารถเข้าถึงได้เพื่อส่งไป manual review
       let imagePayloads: Array<{ mimeType: string; base64: string; file: File; imageData: string }> = [];
       try {
-        // compress และ encode ทุกรูปในกลุ่ม
         for (const file of group) {
           const raw = await fileToBase64(file);
           const match = raw.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -336,35 +335,30 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
           continue;
         }
 
-        // ส่งทั้งกลุ่มใน 1 request
         toast.info(`🤖 กำลังสแกนกลุ่มที่ ${Math.floor(gi / BATCH_GROUP_SIZE) + 1} (${imagePayloads.length} รูป)...`);
         const results = await scanBatch(
           imagePayloads.map((p) => ({ mimeType: p.mimeType, base64: p.base64 }))
         );
 
-        // จับคู่ผลลัพธ์กับไฟล์
         for (let k = 0; k < imagePayloads.length; k++) {
           const { file, imageData } = imagePayloads[k];
           const result = results[k];
           if (!result) { failed.push({ name: file.name, reason: "ไม่ได้รับผลลัพธ์", file }); continue; }
 
-          // ข้ามถ้าซ้ำ (ไม่ toast ทุกใบ — นับรวมแสดงใน summary)
-          if (isDuplicateResult(result, profile)) {
+          if (isDuplicateResult(result, profile, existingReceipts)) {
             skippedCount++;
             doneCount++;
             setBatchProgress(doneCount);
             continue;
           }
 
-          // Low confidence → รอ review (ปีผิดให้ auto-correct แล้ว save เลย ไม่ต้อง review)
           if (result.confidence === "low") {
             toReview.push({ id: crypto.randomUUID(), fileName: file.name, imageData, result });
             continue;
           }
 
-          // High/Medium → auto-save (แก้ปีอัตโนมัติถ้าผิด)
           try {
-            const { yearCorrected, originalYear } = autoSaveResult(result, undefined, profile);
+            const { yearCorrected } = await autoSaveResult(result, imageData, profile, uid);
             if (yearCorrected) yearFixedCount++;
             savedCount++;
           } catch (saveErr: any) {
@@ -373,7 +367,6 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
         }
 
       } catch (err: any) {
-        // ทั้ง group fail → ถ้ามีรูปที่ compress แล้ว → ส่งไป manual review ให้กรอกเอง
         toast.warning(`⚠️ สแกนไม่ได้ ${imagePayloads.length || group.length} รูป — โปรดกรอกข้อมูลเอง`);
         const emptyResult: ScanResult = {
           confidence: "low", document_type: "other",
@@ -383,12 +376,10 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
           doc_number: null, tax_id: null, reference_id: null, amount: null,
         };
         if (imagePayloads.length > 0) {
-          // มีรูป → ส่งไป review dialog
           for (const p of imagePayloads) {
             toReview.push({ id: crypto.randomUUID(), fileName: p.file.name, imageData: p.imageData, result: emptyResult, manualEntry: true });
           }
         } else {
-          // compress ยังไม่ทัน → ยังต้องอยู่ใน failed
           for (const file of group) {
             failed.push({ name: file.name, reason: err.message, file });
           }
@@ -398,7 +389,6 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       doneCount += group.length;
       setBatchProgress(doneCount);
 
-      // หน่วงระหว่าง group
       if (gi + BATCH_GROUP_SIZE < images.length && !cancelRef.current) {
         await new Promise((r) => setTimeout(r, GROUP_DELAY_MS));
       }
@@ -416,7 +406,6 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       setReviewTotal(toReview.length);
     }
 
-    // แสดง summary card แทน toast spam
     setBatchSummary({
       saved: savedCount,
       skipped: skippedCount,
@@ -427,7 +416,7 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
 
     if (batchInputRef.current) batchInputRef.current.value = "";
     if (savedCount > 0) onComplete();
-  }, [profile, onComplete]);
+  }, [profile, uid, receipts, onComplete]);
 
   const handleBatchFiles = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.isArray(files) ? files : Array.from(files);
@@ -440,16 +429,16 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
     await runBatch(failedFiles.map((f) => f.file));
   }, [failedFiles, runBatch]);
 
-  const saveReviewedItem = useCallback((item: PendingReviewItem, edits: ReviewEdits) => {
+  const saveReviewedItem = useCallback(async (item: PendingReviewItem, edits: ReviewEdits) => {
     try {
-      saveReviewedResult(item.result, item.imageData, profile, edits);
+      await saveReviewedResult(item.result, item.imageData, profile, edits, uid);
       toast.success(`✅ บันทึก: ${edits.storeName || "ใบเสร็จ"} ฿${edits.grandTotal.toLocaleString("th-TH")}`);
       onComplete();
     } catch (err: any) {
       toast.error("บันทึกไม่สำเร็จ: " + err.message);
     }
     setPendingReview((prev) => prev.filter((p) => p.id !== item.id));
-  }, [profile, onComplete]);
+  }, [profile, uid, onComplete]);
 
   const skipReviewItem = useCallback((item: PendingReviewItem) => {
     toast.info(`ข้าม: ${item.fileName}`);

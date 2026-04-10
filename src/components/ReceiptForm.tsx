@@ -14,6 +14,8 @@ import BatchReviewDialog from "@/components/BatchReviewDialog";
 
 interface ReceiptFormProps {
   profile: Profile;
+  uid: string;
+  receipts: ReceiptType[];
   onSaved: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   duplicateData?: ReceiptType | null;
@@ -21,9 +23,9 @@ interface ReceiptFormProps {
   onCancelEdit?: () => void;
 }
 
-export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
-  const form = useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData });
-  const batch = useBatchScan(profile, onSaved);
+export default function ReceiptForm({ profile, uid, receipts, onSaved, onDirtyChange, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
+  const form = useReceiptForm({ profile, uid, receipts, onSaved, onDirtyChange, duplicateData, editData });
+  const batch = useBatchScan(profile, uid, receipts, onSaved);
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
 
   // ถ้าเลือกหลายรูป → batch, ถ้าเลือกรูปเดียว → single

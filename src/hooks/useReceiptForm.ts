@@ -1,7 +1,15 @@
 import { useState, useRef, useCallback } from "react";
-import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, type ReceiptItem, type Profile, type ReceiptTag, type Receipt, type DocumentTypeValue } from "@/lib/receipt-store";
-import { isServerSyncAvailable, syncReceiptToServer, updateReceiptOnServer } from "@/lib/server-sync";
-import { isGoogleConnected, syncReceiptToGoogle } from "@/lib/google-api";
+import {
+  getCategoriesForProfile,
+  isDuplicateReceipt,
+  type ReceiptItem,
+  type Profile,
+  type ReceiptTag,
+  type Receipt,
+  type DocumentTypeValue,
+} from "@/lib/receipt-store";
+import { saveReceiptFS, updateReceiptFS } from "@/lib/firestore-store";
+import { uploadReceiptImage } from "@/lib/firebase-storage";
 import { scanReceipt, type ScanResult } from "@/lib/claude-api";
 import { compressImage } from "@/lib/image-utils";
 import { toast } from "sonner";
@@ -20,13 +28,23 @@ export { DOC_TYPE_LABELS };
 
 export interface UseReceiptFormProps {
   profile: Profile;
+  uid: string;
+  receipts: Receipt[];           // รายการทั้งหมด (สำหรับ dedup check)
   onSaved: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   duplicateData?: Receipt | null;
   editData?: Receipt | null;
 }
 
-export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange, duplicateData, editData }: UseReceiptFormProps) {
+export function useReceiptForm({
+  profile: initialProfile,
+  uid,
+  receipts,
+  onSaved,
+  onDirtyChange,
+  duplicateData,
+  editData,
+}: UseReceiptFormProps) {
   const prefill = editData || duplicateData;
   const [profile, setProfileState] = useState<Profile>(prefill?.profile || initialProfile);
   const [title, setTitle] = useState(prefill?.title || "");
@@ -77,9 +95,7 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
       try {
         const compressed = await compressImage(raw, 1200, 0.7);
         const savedKB = Math.round((raw.length - compressed.length) / 1024);
-        if (savedKB > 10) {
-          toast.info(`บีบอัดรูปแล้ว ประหยัด ${savedKB}KB`);
-        }
+        if (savedKB > 10) toast.info(`บีบอัดรูปแล้ว ประหยัด ${savedKB}KB`);
         setImageData(compressed);
       } catch {
         setImageData(raw);
@@ -112,12 +128,11 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
 
     if (result.date) {
       setDate(result.date);
-      // ตรวจสอบปีที่ OCR อ่านได้
       const scannedYear = parseInt(result.date.slice(0, 4), 10);
       const currentYear = new Date().getFullYear();
       if (scannedYear < currentYear - 2 || scannedYear > currentYear + 1) {
         toast.warning(`⚠️ ปีที่อ่านได้ (${scannedYear}) ดูผิดปกติ กรุณาตรวจสอบวันที่`);
-        setScanConfidence("low"); // บังคับ highlight สีเหลืองทุก field
+        setScanConfidence("low");
       }
     }
 
@@ -158,7 +173,6 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
           setItems([{ name: `โอนเงินให้ ${result.recipient_name || ""}`, quantity: 1, price: result.total }]);
         }
         break;
-
       case "receipt":
       case "tax_invoice":
         setStoreName(result.store_name || "");
@@ -166,7 +180,6 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
         else if (result.tax_id) setDescription(`Tax ID: ${result.tax_id}`);
         else if (result.notes) setDescription(result.notes);
         break;
-
       case "quotation":
       case "invoice":
         setStoreName(result.store_name || "");
@@ -177,12 +190,10 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
           setDescription(parts.join("\n") || "");
         }
         break;
-
       case "market_bill":
         setStoreName(result.store_name || "ร้านค้า/ตลาด");
         if (result.notes) setDescription(result.notes);
         break;
-
       default:
         setStoreName(result.store_name || "");
         if (result.notes) setDescription(result.notes);
@@ -209,11 +220,9 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
       setScanModel(result.modelUsed);
 
       const typeLabel = DOC_TYPE_LABELS[result.document_type] || result.document_type;
-
       if (result.document_type === "market_bill") {
         toast.warning("⚠️ บิลมือเขียน โปรดตรวจสอบข้อมูลก่อนบันทึก");
       }
-
       if (result.confidence === "low") {
         toast.warning("⚠️ AI ไม่แน่ใจในบางข้อมูล กรุณาตรวจสอบก่อนบันทึก");
       } else if (result.confidence === "high") {
@@ -251,7 +260,7 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
     setScanConfidence(null);
     setScanDocType(null);
     onDirtyChange?.(false);
-  }, [onDirtyChange]);
+  }, [initialProfile, onDirtyChange]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,21 +275,7 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
     }
 
     setSaving(true);
-
     try {
-      // ตรวจสอบใบเสร็จซ้ำ (เฉพาะรายการใหม่)
-      if (!editData) {
-        const now = Date.now();
-        const recent = getReceipts().filter(r => now - new Date(r.createdAt).getTime() < 24 * 60 * 60 * 1000);
-        const isDuplicate = recent.some(
-          r => r.grandTotal === grandTotal && r.date === date && r.title.trim().toLowerCase() === title.trim().toLowerCase()
-        );
-        if (isDuplicate) {
-          const confirmed = window.confirm("พบรายการที่คล้ายกันบันทึกไว้แล้วใน 24 ชั่วโมงที่ผ่านมา\nต้องการบันทึกซ้ำหรือไม่?");
-          if (!confirmed) { setSaving(false); return; }
-        }
-      }
-
       const receiptData = {
         profile,
         title: title.trim(),
@@ -296,51 +291,55 @@ export function useReceiptForm({ profile: initialProfile, onSaved, onDirtyChange
         items: items.filter((i) => i.name.trim()),
         project: project.trim(),
         reimbursementNote: reimbursementNote.trim(),
-        imageData,
         documentType: (scanDocType as DocumentTypeValue) || undefined,
       };
 
       if (editData) {
-        const updated = updateReceipt(editData.id, { ...receiptData, synced: false });
+        // แก้ไขรายการเดิม
+        await updateReceiptFS(uid, editData.id, receiptData);
+        // ถ้ามีรูปใหม่ → อัปโหลด
+        if (imageData && imageData !== editData.imageData) {
+          uploadReceiptImage(uid, editData.id, imageData).catch(console.error);
+        }
         toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
-        if (updated && isServerSyncAvailable()) {
-          updateReceiptOnServer(updated).catch((err) => {
-            console.error("Update sync error:", err);
-          });
-        }
       } else {
-        const newReceipt = saveReceipt(receiptData);
-        toast.success("บันทึกใบเสร็จเรียบร้อย!");
-
-        // Server sync (Vercel + Apps Script) — ไม่ต้อง login Google
-        if (isServerSyncAvailable()) {
-          syncReceiptToServer(newReceipt).then((imageUrl) => {
-            updateReceipt(newReceipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
-            if (imageUrl) toast.success("Sync + อัปโหลดรูปไป Google Drive ✅");
-            else toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
-          }).catch((err) => {
-            console.error("Server sync error:", err);
-            if (err.message !== "not_configured") {
-              toast.error("Sync ไม่สำเร็จ: " + err.message);
-            }
-          });
-        } else if (isGoogleConnected()) {
-          // Fallback: OAuth (localhost dev)
-          syncReceiptToGoogle(newReceipt).then(() => {
-            toast.success("Sync ไปยัง Google Sheets สำเร็จ ✅");
-          }).catch((err) => {
-            console.error("Google sync error:", err);
-            toast.error("Sync ไม่สำเร็จ: " + err.message);
-          });
+        // ตรวจสอบซ้ำก่อนบันทึก
+        const now = Date.now();
+        const recent = receipts.filter((r) => now - new Date(r.createdAt).getTime() < 24 * 60 * 60 * 1000);
+        const dup = isDuplicateReceipt(
+          { date, grandTotal, storeName: storeName.trim(), profile },
+          recent
+        );
+        if (dup) {
+          const confirmed = window.confirm(
+            "พบรายการที่คล้ายกันบันทึกไว้แล้วใน 24 ชั่วโมงที่ผ่านมา\nต้องการบันทึกซ้ำหรือไม่?"
+          );
+          if (!confirmed) { setSaving(false); return; }
         }
+
+        // บันทึก Firestore
+        const saved = await saveReceiptFS(uid, receiptData);
+        // อัปโหลดรูป (background)
+        if (imageData) {
+          uploadReceiptImage(uid, saved.id, imageData).catch(console.error);
+        }
+        toast.success("บันทึกใบเสร็จเรียบร้อย! 🎉");
       }
 
       resetForm();
       onSaved();
+    } catch (err: any) {
+      console.error("handleSubmit error:", err);
+      toast.error("บันทึกไม่สำเร็จ: " + err.message);
     } finally {
       setSaving(false);
     }
-  }, [title, storeName, description, category, tag, date, totalAmount, vatEnabled, vatAmount, grandTotal, items, project, reimbursementNote, imageData, scanDocType, profile, onSaved, editData, resetForm]);
+  }, [
+    title, storeName, description, category, tag, date,
+    totalAmount, vatEnabled, vatAmount, grandTotal,
+    items, project, reimbursementNote, imageData, scanDocType,
+    profile, uid, receipts, onSaved, editData, resetForm,
+  ]);
 
   // Dirty-tracking wrappers
   const setTitleD = useCallback((v: string) => { setTitle(v); markDirty(); }, [markDirty]);
