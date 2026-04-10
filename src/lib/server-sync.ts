@@ -1,5 +1,5 @@
 import type { Receipt } from "./receipt-store";
-import { getReceipts, saveReceipt, updateReceipt, getDeletedIds } from "./receipt-store";
+import { getReceipts, saveReceipt, updateReceipt, getDeletedIds, isDuplicateReceipt } from "./receipt-store";
 
 /** true ถ้าไม่ได้รันบน localhost (= deploy บน Vercel) */
 export function isServerSyncAvailable(): boolean {
@@ -139,4 +139,58 @@ export async function updateReceiptOnServer(receipt: Receipt): Promise<void> {
 
 export async function deleteReceiptFromServer(id: string): Promise<void> {
   await callSync({ action: "delete", id });
+}
+
+/**
+ * ดึงข้อมูลทั้งหมดจาก Google Sheets แล้วหาและลบรายการซ้ำบน Sheets โดยตรง
+ * ไม่ต้องพึ่ง localStorage — ใช้เมื่อ Sheets มีซ้ำแต่เครื่องสะอาดแล้ว
+ */
+export async function deduplicateOnServer(): Promise<{ found: number; deleted: number; failed: number }> {
+  const res = await fetch("/api/restore");
+  if (!res.ok) throw new Error(`ดึงข้อมูลจาก Sheets ไม่ได้: ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const rows: any[] = data.receipts || [];
+  if (rows.length === 0) return { found: 0, deleted: 0, failed: 0 };
+
+  // แปลง rows เป็น Receipt-like objects เรียงจากเก่าไปใหม่
+  const sorted = [...rows].sort((a, b) => {
+    const ta = new Date(a.createdAt || 0).getTime();
+    const tb = new Date(b.createdAt || 0).getTime();
+    return ta - tb;
+  });
+
+  const kept: Array<{ date: string; grandTotal: number; storeName: string; profile: "personal" | "company" }> = [];
+  const toDelete: string[] = [];
+
+  for (const row of sorted) {
+    const candidate = {
+      date: row.date || "",
+      grandTotal: Number(row.grandTotal) || 0,
+      storeName: row.storeName || row.store_name || "",
+      profile: (row.profile === "personal" ? "personal" : "company") as "personal" | "company",
+    };
+    const isDup = isDuplicateReceipt(candidate, kept as any);
+    if (isDup && row.id) {
+      toDelete.push(row.id);
+    } else {
+      kept.push(candidate);
+    }
+  }
+
+  if (toDelete.length === 0) return { found: 0, deleted: 0, failed: 0 };
+
+  // ลบทีละรายการบน Sheets
+  let deleted = 0;
+  let failed = 0;
+  for (const id of toDelete) {
+    try {
+      await deleteReceiptFromServer(id);
+      deleted++;
+    } catch {
+      failed++;
+    }
+  }
+  return { found: toDelete.length, deleted, failed };
 }

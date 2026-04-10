@@ -6,11 +6,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Bot, Save, Shield, Trash2 } from "lucide-react";
 import { getClaudeSettings, saveClaudeSettings, type ClaudeModel } from "@/lib/claude-api";
 import { compactImageStorage, getImageStorageInfo, removeDuplicateReceipts } from "@/lib/receipt-store";
-import { deleteReceiptFromServer, isServerSyncAvailable } from "@/lib/server-sync";
+import { deleteReceiptFromServer, isServerSyncAvailable, deduplicateOnServer } from "@/lib/server-sync";
 import { toast } from "sonner";
 
 export default function ClaudeSettings({ onChanged }: { onChanged?: () => void }) {
   const [settings, setSettings] = useState(getClaudeSettings);
+  const [isDeduping, setIsDeduping] = useState(false);
   const storageInfo = getImageStorageInfo();
 
   const handleSave = () => {
@@ -108,6 +109,41 @@ export default function ClaudeSettings({ onChanged }: { onChanged?: () => void }
             ตรวจและลบใบเสร็จซ้ำ
           </Button>
           <p className="text-xs text-muted-foreground">ตรวจจาก: วันที่ + ยอดรวม ตรงกัน → ลบอันใหม่ เก็บอันเก่า (ไม่สนชื่อร้าน เพราะ OCR อาจอ่านต่างกัน)</p>
+
+          {/* ปุ่มล้างซ้ำใน Google Sheets โดยตรง */}
+          {isServerSyncAvailable() && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isDeduping}
+                className="w-full text-orange-700 border-orange-300 hover:bg-orange-50 gap-2"
+                onClick={async () => {
+                  setIsDeduping(true);
+                  try {
+                    toast.info("กำลังดึงข้อมูลจาก Google Sheets...");
+                    const { found, deleted, failed } = await deduplicateOnServer();
+                    if (found === 0) {
+                      toast.success("Google Sheets ไม่มีข้อมูลซ้ำ ✅");
+                    } else if (failed === 0) {
+                      toast.success(`ลบซ้ำจาก Sheets แล้ว ${deleted} ใบ ✅`);
+                      onChanged?.();
+                    } else {
+                      toast.warning(`ลบสำเร็จ ${deleted} ใบ, ไม่สำเร็จ ${failed} ใบ`);
+                    }
+                  } catch (err: any) {
+                    toast.error(`เกิดข้อผิดพลาด: ${err.message}`);
+                  } finally {
+                    setIsDeduping(false);
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {isDeduping ? "กำลังล้างซ้ำใน Sheets..." : "ล้างซ้ำใน Google Sheets โดยตรง"}
+              </Button>
+              <p className="text-xs text-muted-foreground">ดึงข้อมูลจาก Sheets ทั้งหมด → หาซ้ำ → ลบออก · ใช้เมื่อ Sheets ยังมีซ้ำทั้งที่แอปสะอาดแล้ว</p>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
