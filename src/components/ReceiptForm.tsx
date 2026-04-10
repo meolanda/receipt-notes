@@ -272,9 +272,16 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                 onChange={(e) => e.target.files && batch.handleBatchFiles(e.target.files)}
               />
               {batch.isBatchScanning ? (
-                <div className="p-3 bg-muted rounded-lg text-center space-y-2">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
-                  <p className="text-sm font-medium">กำลังสแกน {batch.batchProgress}/{batch.batchTotal}...</p>
+                <div className="p-3 bg-muted rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <p className="text-sm font-medium">กำลังสแกน {batch.batchProgress}/{batch.batchTotal}...</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={batch.cancelBatch}>
+                      ยกเลิก
+                    </Button>
+                  </div>
                   <div className="w-full bg-border rounded-full h-1.5">
                     <div
                       className="bg-primary h-1.5 rounded-full transition-all"
