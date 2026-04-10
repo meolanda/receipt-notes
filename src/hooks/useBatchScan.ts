@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { getCategoriesForProfile, saveReceipt, updateReceipt, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
+import { getCategoriesForProfile, getReceipts, saveReceipt, updateReceipt, type DocumentTypeValue, type Profile } from "@/lib/receipt-store";
 import { scanReceipt, scanPDF, type ScanResult } from "@/lib/claude-api";
 import { isServerSyncAvailable, syncReceiptToServer } from "@/lib/server-sync";
 import { compressImage } from "@/lib/image-utils";
@@ -32,6 +32,20 @@ function autoTitle(result: ScanResult): string {
   const storePart = result.store_name || result.recipient_name || "";
   const dateStr = result.date || new Date().toISOString().slice(0, 10);
   return storePart ? storePart : `${docLabel} ${dateStr}`;
+}
+
+function isDuplicateResult(result: ScanResult): boolean {
+  const grandTotal = result.total || 0;
+  const date = result.date || new Date().toISOString().slice(0, 10);
+  const storeName = (result.store_name || result.recipient_name || "").trim().toLowerCase();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return getReceipts().some((r) => {
+    if (new Date(r.createdAt).getTime() < cutoff) return false;
+    if (r.grandTotal !== grandTotal) return false;
+    if (r.date !== date) return false;
+    if (storeName && r.storeName.trim().toLowerCase() !== storeName) return false;
+    return true;
+  });
 }
 
 function autoSaveResult(result: ScanResult, imageData: string | undefined, profile: Profile): void {
@@ -116,10 +130,16 @@ async function processFile(
     if (file.type === "application/pdf") {
       const results = await withTimeout(scanPDF(base64), SCAN_TIMEOUT_MS, file.name);
       if (cancelRef.current) return 0;
-      for (const result of results) autoSaveResult(result, undefined, profile);
-      toast.success(`PDF "${file.name}": พบ ${results.length} ใบเสร็จ`);
+      let saved = 0, skipped = 0;
+      for (const result of results) {
+        if (isDuplicateResult(result)) { skipped++; continue; }
+        autoSaveResult(result, undefined, profile);
+        saved++;
+      }
+      if (skipped > 0) toast.info(`PDF "${file.name}": บันทึก ${saved} ใบ (ข้าม ${skipped} ซ้ำ)`);
+      else toast.success(`PDF "${file.name}": พบ ${results.length} ใบเสร็จ`);
       onProgress();
-      return results.length;
+      return saved;
     } else {
       let imageData = base64;
       try { imageData = await compressImage(base64, 1200, 0.7); } catch { /* ใช้ต้นฉบับ */ }
@@ -130,6 +150,12 @@ async function processFile(
 
       const docLabel = DOC_TYPE_LABELS[result.document_type] || "เอกสาร";
       const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
+      // ตรวจซ้ำก่อนบันทึก
+      if (isDuplicateResult(result)) {
+        toast.info(`ข้ามซ้ำ: ${result.store_name || docLabel}${totalStr}`);
+        onProgress();
+        return 0;
+      }
       // ไม่บันทึก imageData ใน batch mode เพื่อประหยัด localStorage
       try {
         autoSaveResult(result, undefined, profile);
