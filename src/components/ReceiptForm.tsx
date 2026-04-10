@@ -301,6 +301,20 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                   อัปโหลดหลายรูป / PDF
                 </Button>
               )}
+
+              {/* แสดงรายการที่ scan ไม่สำเร็จ */}
+              {!batch.isBatchScanning && batch.failedFiles.length > 0 && (
+                <div className="mt-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 space-y-1.5">
+                  <p className="text-sm font-medium text-destructive">สแกนไม่สำเร็จ {batch.failedFiles.length} ไฟล์ — เลือกใหม่เพื่อลองอีกครั้ง:</p>
+                  {batch.failedFiles.map((f, i) => (
+                    <div key={i} className="text-xs text-destructive/80 flex gap-1">
+                      <span className="shrink-0">•</span>
+                      <span className="font-medium">{f.name}</span>
+                      <span className="text-muted-foreground truncate">— {f.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </form>

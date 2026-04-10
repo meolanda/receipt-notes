@@ -191,6 +191,7 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
   const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchTotal, setBatchTotal] = useState(0);
+  const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string }[]>([]);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
 
@@ -203,26 +204,31 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
 
     const fileArray = Array.from(files);
     cancelRef.current = false;
+    setFailedFiles([]);
     setBatchTotal(fileArray.length);
     setBatchProgress(0);
     setIsBatchScanning(true);
 
     let savedCount = 0;
     let doneCount = 0;
+    const failed: { name: string; reason: string }[] = [];
 
     const onProgress = () => {
       doneCount++;
       setBatchProgress(doneCount);
     };
 
-    // ประมวลผล CONCURRENT_LIMIT ไฟล์พร้อมกัน หน่วงระหว่าง batch
     for (let i = 0; i < fileArray.length; i += CONCURRENT_LIMIT) {
       if (cancelRef.current) break;
       const chunk = fileArray.slice(i, i + CONCURRENT_LIMIT);
-      const counts = await Promise.all(
+      const results = await Promise.all(
         chunk.map((file) => processFile(file, profile, onProgress, cancelRef))
       );
-      savedCount += counts.reduce((a, b) => a + b, 0);
+      for (let j = 0; j < results.length; j++) {
+        const { saved, failReason } = results[j];
+        savedCount += saved;
+        if (failReason) failed.push({ name: chunk[j].name, reason: failReason });
+      }
       if (i + CONCURRENT_LIMIT < fileArray.length && !cancelRef.current) {
         await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
       }
@@ -231,10 +237,13 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
     setIsBatchScanning(false);
     setBatchProgress(0);
     setBatchTotal(0);
+    setFailedFiles(failed);
     if (batchInputRef.current) batchInputRef.current.value = "";
 
     if (cancelRef.current) {
       toast.info(`ยกเลิกแล้ว (บันทึกไปแล้ว ${savedCount} ใบ)`);
+    } else if (failed.length > 0) {
+      toast.warning(`บันทึก ${savedCount} ใบ, สแกนไม่สำเร็จ ${failed.length} ไฟล์`);
     } else if (savedCount > 0) {
       toast.success(`บันทึกอัตโนมัติ ${savedCount} ใบเสร็จเรียบร้อย! ✅`);
     }
@@ -242,5 +251,5 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
     if (savedCount > 0) onComplete();
   }, [profile, onComplete]);
 
-  return { isBatchScanning, batchProgress, batchTotal, batchInputRef, handleBatchFiles, cancelBatch };
+  return { isBatchScanning, batchProgress, batchTotal, failedFiles, batchInputRef, handleBatchFiles, cancelBatch };
 }
