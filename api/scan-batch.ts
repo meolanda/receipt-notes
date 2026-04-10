@@ -78,13 +78,13 @@ function extractJsonArray(text: string): any[] | null {
 async function callGeminiBatch(
   apiKey: string,
   model: string,
-  images: Array<{ mimeType: string; imageData: string }>
+  images: Array<{ mimeType: string; base64: string }>   // ← ใช้ base64 ตรงกับ client
 ): Promise<any[]> {
   const prompt = buildBatchPrompt(images.length);
 
   // สร้าง parts: รูปทั้งหมด + prompt ท้ายสุด
   const parts: any[] = images.map((img) => ({
-    inline_data: { mime_type: img.mimeType, data: img.imageData },
+    inline_data: { mime_type: img.mimeType, data: img.base64 },  // ← แก้ imageData → base64
   }));
   parts.push({ text: prompt });
 
