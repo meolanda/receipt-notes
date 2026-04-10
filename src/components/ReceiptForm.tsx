@@ -24,6 +24,17 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
   const form = useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData });
   const batch = useBatchScan(profile, onSaved);
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
+
+  // ถ้าเลือกหลายรูป → batch, ถ้าเลือกรูปเดียว → single
+  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (files.length > 1) {
+      batch.handleBatchFiles(files);
+    } else {
+      form.handleImageUpload(e);
+    }
+  };
   const isPersonal = form.profile === "personal";
   const isEditing = !!editData;
 
@@ -73,8 +84,8 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
             <Label>รูปใบเสร็จ (ไม่บังคับ)</Label>
             {/* input สำหรับกล้องโดยตรง (มือถือ) */}
             <input ref={form.fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={form.handleImageUpload} />
-            {/* input สำหรับเลือกรูปจากคลัง */}
-            <input id="galleryInput" type="file" accept="image/*" className="hidden" onChange={form.handleImageUpload} />
+            {/* input สำหรับเลือกรูปจากคลัง (รองรับหลายรูปพร้อมกัน) */}
+            <input id="galleryInput" type="file" accept="image/*,.pdf,application/pdf" multiple className="hidden" onChange={handleGalleryChange} />
             {form.imageData ? (
               <div className="relative mt-2">
                 <img src={form.imageData} alt="ใบเสร็จ" className="w-full max-h-48 object-cover rounded-lg border border-border" />
