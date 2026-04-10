@@ -6,9 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil } from "lucide-react";
+import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil, Upload } from "lucide-react";
 import { TAGS, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
+import { useBatchScan } from "@/hooks/useBatchScan";
 
 interface ReceiptFormProps {
   profile: Profile;
@@ -21,6 +22,7 @@ interface ReceiptFormProps {
 
 export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData, onCancelEdit }: ReceiptFormProps) {
   const form = useReceiptForm({ profile, onSaved, onDirtyChange, duplicateData, editData });
+  const batch = useBatchScan(profile, onSaved);
   const lowConfCls = form.isLowConfidence ? "ring-2 ring-yellow-400 bg-yellow-50" : "";
   const isPersonal = form.profile === "personal";
   const isEditing = !!editData;
@@ -239,11 +241,50 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
             </div>
           )}
 
-          <Button type="submit" className="w-full" size="lg" disabled={form.saving}>
+          <Button type="submit" className="w-full" size="lg" disabled={form.saving || batch.isBatchScanning}>
             {form.saving ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />กำลังอัปโหลด...</>
             ) : isEditing ? "💾 บันทึกการแก้ไข" : "บันทึกใบเสร็จ"}
           </Button>
+
+          {/* Batch scan section */}
+          {!isEditing && (
+            <div className="pt-3 border-t border-dashed border-border">
+              <p className="text-xs text-muted-foreground mb-2 text-center">หรือสแกนหลายรูป / PDF พร้อมกัน (บันทึกอัตโนมัติ)</p>
+              <input
+                ref={batch.batchInputRef}
+                id="batchInput"
+                type="file"
+                accept="image/*,.pdf,application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => e.target.files && batch.handleBatchFiles(e.target.files)}
+              />
+              {batch.isBatchScanning ? (
+                <div className="p-3 bg-muted rounded-lg text-center space-y-2">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                  <p className="text-sm font-medium">กำลังสแกน {batch.batchProgress}/{batch.batchTotal}...</p>
+                  <div className="w-full bg-border rounded-full h-1.5">
+                    <div
+                      className="bg-primary h-1.5 rounded-full transition-all"
+                      style={{ width: `${batch.batchTotal ? (batch.batchProgress / batch.batchTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-dashed gap-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => batch.batchInputRef.current?.click()}
+                  disabled={form.saving}
+                >
+                  <Upload className="h-4 w-4" />
+                  อัปโหลดหลายรูป / PDF
+                </Button>
+              )}
+            </div>
+          )}
         </form>
       </CardContent>
     </Card>
