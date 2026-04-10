@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil, Upload, RefreshCw } from "lucide-react";
+import { Camera, ImageIcon, Plus, Trash2, Receipt, Bot, Loader2, X, Pencil, Upload, RefreshCw, CheckCircle2, SkipForward, AlertTriangle, XCircle, CalendarClock } from "lucide-react";
 import { TAGS, type Profile, type ReceiptTag, type Receipt as ReceiptType } from "@/lib/receipt-store";
 import { useReceiptForm, DOC_TYPE_LABELS } from "@/hooks/useReceiptForm";
 import { useBatchScan } from "@/hooks/useBatchScan";
@@ -319,33 +319,72 @@ export default function ReceiptForm({ profile, onSaved, onDirtyChange, duplicate
                 </Button>
               )}
 
-              {/* แสดงรายการที่ scan ไม่สำเร็จ + ปุ่มลองใหม่ */}
-              {!batch.isBatchScanning && batch.failedFiles.length > 0 && (
-                <div className="mt-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-destructive">
-                      ❌ สแกนไม่สำเร็จ {batch.failedFiles.length} ไฟล์
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0 gap-1"
-                      onClick={batch.retryFailed}
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      ลองใหม่
+              {/* Summary Card หลัง scan เสร็จ */}
+              {!batch.isBatchScanning && batch.batchSummary && (
+                <div className="mt-2 rounded-lg border border-border overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-muted">
+                    <span className="text-sm font-semibold">ผลการสแกน</span>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground" onClick={batch.clearSummary}>
+                      <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                  <div className="space-y-1">
-                    {batch.failedFiles.map((f, i) => (
-                      <div key={i} className="text-xs text-destructive/80 flex gap-1">
-                        <span className="shrink-0">•</span>
-                        <span className="font-medium truncate">{f.name}</span>
-                        <span className="text-muted-foreground shrink-0">— {f.reason}</span>
+                  <div className="grid grid-cols-2 divide-x divide-y divide-border">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">บันทึกแล้ว</p>
+                        <p className="font-bold text-green-700">{batch.batchSummary.saved} ใบ</p>
                       </div>
-                    ))}
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <SkipForward className="h-4 w-4 text-blue-500 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">ข้ามซ้ำ</p>
+                        <p className="font-bold text-blue-600">{batch.batchSummary.skipped} ใบ</p>
+                      </div>
+                    </div>
+                    {batch.batchSummary.review > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">รอตรวจสอบ</p>
+                          <p className="font-bold text-amber-600">{batch.batchSummary.review} ใบ</p>
+                        </div>
+                      </div>
+                    )}
+                    {batch.batchSummary.failed > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">ล้มเหลว</p>
+                          <p className="font-bold text-destructive">{batch.batchSummary.failed} ใบ</p>
+                        </div>
+                      </div>
+                    )}
+                    {batch.batchSummary.yearFixed > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-2 col-span-2">
+                        <CalendarClock className="h-4 w-4 text-purple-500 shrink-0" />
+                        <p className="text-xs text-purple-700">แก้ปีอัตโนมัติ {batch.batchSummary.yearFixed} ใบ (OCR อ่านปีผิด)</p>
+                      </div>
+                    )}
                   </div>
+
+                  {/* ล้มเหลว: แสดงรายชื่อ + ลองใหม่ */}
+                  {batch.failedFiles.length > 0 && (
+                    <div className="border-t border-border px-3 py-2 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-destructive">ไฟล์ที่สแกนไม่ได้:</p>
+                        <Button type="button" size="sm" variant="outline"
+                          className="h-6 text-xs border-destructive/40 text-destructive gap-1"
+                          onClick={batch.retryFailed}>
+                          <RefreshCw className="h-3 w-3" /> ลองใหม่
+                        </Button>
+                      </div>
+                      {batch.failedFiles.map((f, i) => (
+                        <p key={i} className="text-xs text-destructive/80 truncate">• {f.name}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

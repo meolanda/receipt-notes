@@ -53,12 +53,63 @@ function isDuplicateResult(result: ScanResult, profile: Profile): boolean {
   return isDuplicateReceipt({ date, grandTotal, storeName, profile }, recent);
 }
 
+/**
+ * เดา category จาก store name + items + document_type
+ * ใช้ pattern matching ภาษาไทยและอังกฤษที่พบบ่อย
+ */
+function smartGuessCategory(result: ScanResult, available: string[]): string {
+  const has = (cat: string) => available.includes(cat);
+  const text = [
+    result.store_name, result.recipient_name, result.notes,
+    ...(result.items || []).map((i) => i.name),
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  // อาหาร/เครื่องดื่ม
+  if (has("อาหาร") && /kfc|mcdonald|burger|pizza|starbucks|cafe|coffee|ชา|กาแฟ|อาหาร|ร้านอาหาร|ข้าว|ก๋วยเตี๋ยว|ส้มตำ|ไก่|หมู|seafood|sushi/.test(text)) return "อาหาร";
+  if (result.document_type === "market_bill" && has("อาหาร")) return "อาหาร";
+
+  // ขนส่ง/โลจิสติกส์
+  if (has("ขนส่ง") && /lalamove|grab|kerry|flash|ไปรษณีย์|จัดส่ง|ขนส่ง|delivery|logistics|shippop|dhl|fedex|scg/.test(text)) return "ขนส่ง";
+
+  // อะไหล่/วัสดุ (เหมาะกับธุรกิจแอร์)
+  if (has("อะไหล่") && /อะไหล่|spare|compressor|refrigerant|r410|r22|r32|freon|pump|valve|motor|pcb|inverter|บราก|เทป|ท่อ|น้ำยา|แอร์|air|coil|fan|filter|sensor|relay|capacitor|contactor|fuse/.test(text)) return "อะไหล่";
+
+  // ค่าน้ำ/ไฟ/สาธารณูปโภค
+  if (has("ค่าน้ำ/ไฟ") && /การไฟฟ้า|ประปา|pea|mea|electricity|water|ค่าไฟ|ค่าน้ำ|true|ais|dtac|internet|wifi|โทรศัพท์/.test(text)) return "ค่าน้ำ/ไฟ";
+
+  // สุขภาพ
+  if (has("สุขภาพ") && /hospital|clinic|pharmacy|โรงพยาบาล|คลินิก|ร้านขายยา|ยา|วิตามิน|dental|doctor/.test(text)) return "สุขภาพ";
+
+  // ช้อปปิ้ง
+  if (has("ช้อปปิ้ง") && /lazada|shopee|amazon|central|robinson|homepro|bigc|lotus|makro|tesco|tops/.test(text)) return "ช้อปปิ้ง";
+
+  // ท่องเที่ยว/ที่พัก
+  if (has("ท่องเที่ยว") && /hotel|resort|motel|hostel|airbnb|agoda|booking|โรงแรม|ที่พัก|resort/.test(text)) return "ท่องเที่ยว";
+
+  return available[0] || "อื่นๆ";
+}
+
+/**
+ * แก้ปีอัตโนมัติถ้า OCR อ่านปีผิด (เช่น 2021→2026, 2023→2026)
+ * คืนค่า { date, corrected } — corrected=true ถ้ามีการแก้
+ */
+function autoCorrectYear(dateStr: string | null): { date: string; corrected: boolean; originalYear?: number } {
+  if (!dateStr) return { date: new Date().toISOString().slice(0, 10), corrected: false };
+  const currentYear = new Date().getFullYear();
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return { date: dateStr, corrected: false };
+  const scannedYear = parseInt(parts[0], 10);
+  if (isNaN(scannedYear)) return { date: dateStr, corrected: false };
+  if (scannedYear < currentYear - 2 || scannedYear > currentYear + 1) {
+    return { date: `${currentYear}-${parts[1]}-${parts[2]}`, corrected: true, originalYear: scannedYear };
+  }
+  return { date: dateStr, corrected: false };
+}
+
 /** Auto-save สำหรับ high/medium confidence */
-function autoSaveResult(result: ScanResult, imageData: string | undefined, profile: Profile): void {
+function autoSaveResult(result: ScanResult, imageData: string | undefined, profile: Profile): { yearCorrected: boolean; originalYear?: number } {
   const categories = getCategoriesForProfile(profile);
-  const category = (result.document_type === "market_bill" && categories.includes("อาหาร"))
-    ? "อาหาร"
-    : categories[0] || "อื่นๆ";
+  const category = smartGuessCategory(result, categories);
 
   const vatAmount = result.vat != null ? Number(result.vat) : 0;
   const grandTotal = result.total || 0;
@@ -88,6 +139,8 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
     description = result.notes;
   }
 
+  const { date: correctedDate, corrected, originalYear } = autoCorrectYear(result.date);
+
   const receipt = saveReceipt({
     profile,
     title: autoTitle(result),
@@ -95,7 +148,7 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
     description,
     category,
     tag,
-    date: result.date || new Date().toISOString().slice(0, 10),
+    date: correctedDate,
     totalAmount,
     vatEnabled: vatAmount > 0,
     vatAmount,
@@ -112,6 +165,7 @@ function autoSaveResult(result: ScanResult, imageData: string | undefined, profi
       updateReceipt(receipt.id, { synced: true, ...(imageUrl ? { imageUrl } : {}) });
     }).catch(console.error);
   }
+  return { yearCorrected: corrected, originalYear };
 }
 
 /** บันทึกหลังผู้ใช้ review และแก้ไขแล้ว */
@@ -162,6 +216,14 @@ export function saveReviewedResult(
   }
 }
 
+export interface BatchSummary {
+  saved: number;
+  skipped: number;       // ซ้ำ
+  review: number;        // รอตรวจ
+  failed: number;
+  yearFixed: number;     // แก้ปีอัตโนมัติ
+}
+
 export interface UseBatchScanReturn {
   isBatchScanning: boolean;
   batchProgress: number;
@@ -170,6 +232,8 @@ export interface UseBatchScanReturn {
   failedFiles: { name: string; reason: string; file: File }[];
   pendingReview: PendingReviewItem[];
   reviewTotal: number;
+  batchSummary: BatchSummary | null;
+  clearSummary: () => void;
   saveReviewedItem: (item: PendingReviewItem, edits: ReviewEdits) => void;
   skipReviewItem: (item: PendingReviewItem) => void;
   batchInputRef: React.RefObject<HTMLInputElement>;
@@ -186,8 +250,11 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
   const [failedFiles, setFailedFiles] = useState<{ name: string; reason: string; file: File }[]>([]);
   const [pendingReview, setPendingReview] = useState<PendingReviewItem[]>([]);
   const [reviewTotal, setReviewTotal] = useState(0);
+  const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
+
+  const clearSummary = useCallback(() => setBatchSummary(null), []);
 
   const cancelBatch = useCallback(() => { cancelRef.current = true; }, []);
 
@@ -202,6 +269,8 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
     setIsBatchScanning(true);
 
     let savedCount = 0;
+    let skippedCount = 0;  // ซ้ำ
+    let yearFixedCount = 0; // แก้ปีอัตโนมัติ
     let doneCount = 0;
     const failed: { name: string; reason: string; file: File }[] = [];
     const toReview: PendingReviewItem[] = [];
@@ -279,33 +348,24 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
           const result = results[k];
           if (!result) { failed.push({ name: file.name, reason: "ไม่ได้รับผลลัพธ์", file }); continue; }
 
-          const scannedYear = result.date ? parseInt(result.date.slice(0, 4), 10) : 0;
-          const currentYear = new Date().getFullYear();
-          // ปีที่อ่านได้เก่ากว่า 2 ปีก็น่าสงสัย (OCR อาจอ่าน 2026 → 2021/2023)
-          const isYearSuspicious = scannedYear > 0 && (scannedYear < currentYear - 2 || scannedYear > currentYear + 1);
-
-          // ข้ามถ้าซ้ำ
+          // ข้ามถ้าซ้ำ (ไม่ toast ทุกใบ — นับรวมแสดงใน summary)
           if (isDuplicateResult(result, profile)) {
-            const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
-            toast.info(`ข้ามซ้ำ: ${result.store_name || file.name}${totalStr}`);
+            skippedCount++;
             doneCount++;
             setBatchProgress(doneCount);
             continue;
           }
 
-          // Low confidence หรือปีผิด → รอ review
-          if (result.confidence === "low" || isYearSuspicious) {
-            const reason = isYearSuspicious ? `ปี ${scannedYear} ดูผิดปกติ` : "AI ไม่มั่นใจ";
-            toast.warning(`⚠️ ${file.name}: ${reason} — รอตรวจสอบ`);
+          // Low confidence → รอ review (ปีผิดให้ auto-correct แล้ว save เลย ไม่ต้อง review)
+          if (result.confidence === "low") {
             toReview.push({ id: crypto.randomUUID(), fileName: file.name, imageData, result });
             continue;
           }
 
-          // High/Medium → auto-save
+          // High/Medium → auto-save (แก้ปีอัตโนมัติถ้าผิด)
           try {
-            autoSaveResult(result, undefined, profile);
-            const totalStr = result.total ? ` ฿${result.total.toLocaleString("th-TH")}` : "";
-            toast.success(`✅ ${result.store_name || file.name}${totalStr}`);
+            const { yearCorrected, originalYear } = autoSaveResult(result, undefined, profile);
+            if (yearCorrected) yearFixedCount++;
             savedCount++;
           } catch (saveErr: any) {
             failed.push({ name: file.name, reason: saveErr.message, file });
@@ -356,24 +416,16 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
       setReviewTotal(toReview.length);
     }
 
+    // แสดง summary card แทน toast spam
+    setBatchSummary({
+      saved: savedCount,
+      skipped: skippedCount,
+      review: toReview.length,
+      failed: failed.length,
+      yearFixed: yearFixedCount,
+    });
+
     if (batchInputRef.current) batchInputRef.current.value = "";
-
-    if (cancelRef.current) {
-      toast.info(`ยกเลิกแล้ว (บันทึกไปแล้ว ${savedCount} ใบ)`);
-    } else {
-      const reviewMsg = toReview.length > 0 ? `, รอตรวจ ${toReview.length} ใบ ⚠️` : "";
-      const failMsg = failed.length > 0 ? `, ล้มเหลว ${failed.length} ไฟล์` : "";
-      if (savedCount > 0 || toReview.length > 0) {
-        if (toReview.length > 0) {
-          toast.warning(`บันทึก ${savedCount} ใบ${reviewMsg}${failMsg}`);
-        } else {
-          toast.success(`บันทึก ${savedCount} ใบเรียบร้อย! ✅${failMsg}`);
-        }
-      } else if (failed.length > 0) {
-        toast.error(`สแกนไม่สำเร็จทั้งหมด ${failed.length} ไฟล์ — ลองกด "ลองใหม่"`);
-      }
-    }
-
     if (savedCount > 0) onComplete();
   }, [profile, onComplete]);
 
@@ -407,6 +459,7 @@ export function useBatchScan(profile: Profile, onComplete: () => void): UseBatch
   return {
     isBatchScanning, batchProgress, batchTotal, batchCurrentFile,
     failedFiles, pendingReview, reviewTotal,
+    batchSummary, clearSummary,
     saveReviewedItem, skipReviewItem,
     batchInputRef, handleBatchFiles, retryFailed, cancelBatch,
   };
