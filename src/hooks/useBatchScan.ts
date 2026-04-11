@@ -353,18 +353,8 @@ export function useBatchScan(
             continue;
           }
 
-          if (result.confidence === "low") {
-            toReview.push({ id: crypto.randomUUID(), fileName: file.name, imageData, result });
-            continue;
-          }
-
-          try {
-            const { yearCorrected } = await autoSaveResult(result, imageData, profile, uid);
-            if (yearCorrected) yearFixedCount++;
-            savedCount++;
-          } catch (saveErr: any) {
-            failed.push({ name: file.name, reason: saveErr.message, file });
-          }
+          // ส่งทุกใบเข้า review เสมอ — ไม่ auto-save (AI อ่านผิดบ่อย)
+          toReview.push({ id: crypto.randomUUID(), fileName: file.name, imageData, result });
         }
 
       } catch (err: any) {
