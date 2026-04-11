@@ -95,7 +95,7 @@ async function callGeminiBatch(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+        generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: "application/json" },
       }),
     }
   );
