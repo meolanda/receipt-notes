@@ -106,7 +106,7 @@ async function callGemini(apiKey: string, model: string, mimeType: string, image
             { text: PROMPT },
           ],
         }],
-        generationConfig: { temperature: 0, maxOutputTokens: 2048, responseMimeType: "application/json" },
+        generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: "application/json" },
       }),
     }
   );
