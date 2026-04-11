@@ -51,6 +51,7 @@ export default function ReceiptForm({ profile, uid, receipts, onSaved, onDirtyCh
         profile={profile}
         onSave={batch.saveReviewedItem}
         onSkip={batch.skipReviewItem}
+        onSaveAll={batch.saveAllReviewItems}
       />
     )}
     <Card className="receipt-shadow fade-in">

@@ -232,6 +232,7 @@ export interface UseBatchScanReturn {
   batchSummary: BatchSummary | null;
   clearSummary: () => void;
   saveReviewedItem: (item: PendingReviewItem, edits: ReviewEdits) => Promise<void>;
+  saveAllReviewItems: (editsMap: Record<string, ReviewEdits>) => Promise<void>;
   skipReviewItem: (item: PendingReviewItem) => void;
   batchInputRef: React.RefObject<HTMLInputElement>;
   handleBatchFiles: (files: FileList | File[]) => Promise<void>;
@@ -440,6 +441,36 @@ export function useBatchScan(
     setPendingReview((prev) => prev.filter((p) => p.id !== item.id));
   }, [profile, uid, onComplete]);
 
+  const saveAllReviewItems = useCallback(async (editsMap: Record<string, ReviewEdits>) => {
+    let savedCount = 0;
+    const errors: string[] = [];
+
+    // ใช้ functional update เพื่อได้ current pendingReview
+    let currentItems: PendingReviewItem[] = [];
+    setPendingReview((prev) => { currentItems = prev; return prev; });
+
+    for (const item of currentItems) {
+      const edits = editsMap[item.id];
+      if (!edits) continue;
+      try {
+        await saveReviewedResult(item.result, item.imageData, profile, edits, uid);
+        savedCount++;
+      } catch (err: any) {
+        console.error("[saveAll]", err);
+        errors.push(item.fileName);
+      }
+    }
+
+    if (savedCount > 0) {
+      toast.success(`✅ บันทึกทั้งหมด ${savedCount} ใบ`);
+      onComplete();
+    }
+    if (errors.length > 0) {
+      toast.error(`❌ บันทึกไม่ได้ ${errors.length} ใบ`);
+    }
+    setPendingReview([]);
+  }, [profile, uid, onComplete]);
+
   const skipReviewItem = useCallback((item: PendingReviewItem) => {
     toast.info(`ข้าม: ${item.fileName}`);
     setPendingReview((prev) => prev.filter((p) => p.id !== item.id));
@@ -449,7 +480,7 @@ export function useBatchScan(
     isBatchScanning, batchProgress, batchTotal, batchCurrentFile,
     failedFiles, pendingReview, reviewTotal,
     batchSummary, clearSummary,
-    saveReviewedItem, skipReviewItem,
+    saveReviewedItem, saveAllReviewItems, skipReviewItem,
     batchInputRef, handleBatchFiles, retryFailed, cancelBatch,
   };
 }

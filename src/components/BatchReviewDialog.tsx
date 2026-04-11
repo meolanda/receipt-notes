@@ -1,222 +1,352 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, SkipForward, AlertTriangle, PenLine } from "lucide-react";
+import { ArrowLeft, Save, SkipForward, AlertTriangle, PenLine, CheckCircle2, ChevronRight, Loader2, FileX } from "lucide-react";
 import { getCategoriesForProfile, type Profile } from "@/lib/receipt-store";
 import type { PendingReviewItem, ReviewEdits } from "@/hooks/useBatchScan";
 
 interface BatchReviewDialogProps {
-  items: PendingReviewItem[];       // รายการที่รอตรวจ (ลดลงเรื่อยๆ)
-  reviewTotal: number;              // จำนวนรวมตั้งแต่ต้น (สำหรับแสดง X/N)
+  items: PendingReviewItem[];
+  reviewTotal: number;
   profile: Profile;
   onSave: (item: PendingReviewItem, edits: ReviewEdits) => void;
   onSkip: (item: PendingReviewItem) => void;
+  onSaveAll: (editsMap: Record<string, ReviewEdits>) => Promise<void>;
+}
+
+function initEditsForItem(item: PendingReviewItem, categories: string[]): ReviewEdits {
+  const r = item.result;
+  const currentYear = new Date().getFullYear();
+  let date = r.date || new Date().toISOString().slice(0, 10);
+
+  // Auto-correct year
+  const parts = date.split("-");
+  if (parts.length === 3) {
+    const yr = parseInt(parts[0]);
+    if (!isNaN(yr) && (yr < currentYear - 2 || yr > currentYear + 1)) {
+      date = `${currentYear}-${parts[1]}-${parts[2]}`;
+    }
+  }
+
+  const category =
+    r.document_type === "market_bill" && categories.includes("อาหาร")
+      ? "อาหาร"
+      : categories[0] || "อื่นๆ";
+
+  return {
+    storeName: r.store_name || r.recipient_name || "",
+    date,
+    grandTotal: r.total ?? 0,
+    category,
+  };
 }
 
 export default function BatchReviewDialog({
-  items, reviewTotal, profile, onSave, onSkip,
+  items, reviewTotal, profile, onSave, onSkip, onSaveAll,
 }: BatchReviewDialogProps) {
   const categories = getCategoriesForProfile(profile);
-  const current = items[0]; // แสดงอันแรกเสมอ (ลบออกเมื่อ save/skip)
+  const [editsMap, setEditsMap] = useState<Record<string, ReviewEdits>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
-  const [storeName, setStoreName] = useState("");
-  const [date, setDate] = useState("");
-  const [grandTotal, setGrandTotal] = useState<number | "">(0);
-  const [category, setCategory] = useState(categories[0] || "อื่นๆ");
-
-  // Reset form เมื่อ item เปลี่ยน
+  // Init edits เมื่อ items เปลี่ยน
   useEffect(() => {
-    if (!current) return;
-    const r = current.result;
-    setStoreName(r.store_name || r.recipient_name || "");
-    setDate(r.date || new Date().toISOString().slice(0, 10));
-    setGrandTotal(r.total ?? 0);
-    // เดา category จาก document_type
-    const guessCategory =
-      r.document_type === "market_bill" && categories.includes("อาหาร")
-        ? "อาหาร"
-        : categories[0] || "อื่นๆ";
-    setCategory(guessCategory);
-  }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setEditsMap((prev) => {
+      const next = { ...prev };
+      for (const item of items) {
+        if (!next[item.id]) {
+          next[item.id] = initEditsForItem(item, categories);
+        }
+      }
+      // ลบ item ที่ถูก save/skip ออกแล้ว
+      for (const id of Object.keys(next)) {
+        if (!items.find((i) => i.id === id)) delete next[id];
+      }
+      return next;
+    });
+    // ถ้า selectedId ถูกลบออกแล้ว ให้กลับ list
+    setSelectedId((prev) => {
+      if (prev && !items.find((i) => i.id === prev)) return null;
+      return prev;
+    });
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!current) return null;
-
-  const currentYear = new Date().getFullYear();
-  const scannedYear = date ? parseInt(date.slice(0, 4), 10) : 0;
-  const isYearSuspicious = scannedYear > 0 && (scannedYear < currentYear - 2 || scannedYear > currentYear + 1);
-
-  const doneCount = reviewTotal - items.length; // บันทึก/ข้ามไปแล้วกี่ใบ
-  const progressPct = reviewTotal > 0 ? (doneCount / reviewTotal) * 100 : 0;
-
-  const handleSave = () => {
-    const total = typeof grandTotal === "number" ? grandTotal : parseFloat(String(grandTotal)) || 0;
-    onSave(current, { storeName, date, grandTotal: total, category });
+  const updateEdit = (id: string, field: keyof ReviewEdits, value: string | number) => {
+    setEditsMap((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
   };
 
-  const handleSkip = () => {
-    onSkip(current);
+  const handleSaveAll = async () => {
+    setSavingAll(true);
+    try {
+      await onSaveAll(editsMap);
+    } finally {
+      setSavingAll(false);
+    }
   };
 
-  return (
-    <Dialog open modal>
-      <DialogContent
-        className="max-w-sm w-[95vw] max-h-[92vh] overflow-y-auto p-0"
-        onInteractOutside={(e) => e.preventDefault()} // บังคับให้ผ่านทุกใบก่อนปิด
-        onEscapeKeyDown={(e) => e.preventDefault()}
-      >
+  if (items.length === 0) return null;
+
+  // ════════════════════════════════════════
+  // DETAIL VIEW — เมื่อกดเข้าดูรายละเอียด
+  // ════════════════════════════════════════
+  const selectedItem = selectedId ? items.find((i) => i.id === selectedId) : null;
+  if (selectedItem) {
+    const edits = editsMap[selectedItem.id] || initEditsForItem(selectedItem, categories);
+    const idx = items.findIndex((i) => i.id === selectedId);
+    const currentYear = new Date().getFullYear();
+    const scannedYear = edits.date ? parseInt(edits.date.slice(0, 4)) : 0;
+    const isYearSuspicious =
+      scannedYear > 0 && (scannedYear < currentYear - 2 || scannedYear > currentYear + 1);
+
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex flex-col">
         {/* Header */}
-        <DialogHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <DialogTitle className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-              <span className="text-base">ตรวจสอบก่อนบันทึก</span>
-            </div>
-            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 shrink-0">
-              {doneCount + 1}/{reviewTotal} ใบ
-            </Badge>
-          </DialogTitle>
-
-          {/* Progress bar */}
-          <div className="w-full bg-muted rounded-full h-1.5 mt-2">
-            <div
-              className="bg-amber-400 h-1.5 rounded-full transition-all duration-300"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-        </DialogHeader>
-
-        <div className="px-4 py-4 space-y-4">
-          {/* ชื่อไฟล์ */}
-          <p className="text-xs text-muted-foreground truncate">
-            📄 {current.fileName}
-          </p>
-
-          {/* รูปใบเสร็จ */}
-          {current.imageData && (
-            <div className="rounded-lg overflow-hidden border border-border bg-muted">
-              <img
-                src={current.imageData}
-                alt="ใบเสร็จ"
-                className="w-full max-h-44 object-contain"
-              />
-            </div>
-          )}
-
-          {/* Badge เหตุผล */}
-          <div className="flex flex-wrap gap-1.5">
-            {current.manualEntry ? (
-              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                <PenLine className="h-3 w-3 mr-1" />
-                สแกนไม่ได้ — กรอกข้อมูลเอง
-              </Badge>
-            ) : (
-              <>
-                {current.result.confidence === "low" && (
-                  <Badge variant="outline" className="text-xs bg-red-50 text-red-600 border-red-200">
-                    ⚠️ AI ไม่มั่นใจ
-                  </Badge>
-                )}
-                {isYearSuspicious && (
-                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                    📅 ปีอาจผิด ({scannedYear})
-                  </Badge>
-                )}
-                {current.result.document_type === "market_bill" && (
-                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                    ✍️ ลายมือ
-                  </Badge>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Form */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">ร้านค้า / ชื่อรายการ</Label>
-              <Input
-                value={storeName}
-                onChange={(e) => setStoreName(e.target.value)}
-                placeholder="ชื่อร้านหรือรายการ"
-                className="mt-1 h-11"
-                autoFocus
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-sm">วันที่</Label>
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className={`mt-1 h-11 ${isYearSuspicious ? "ring-2 ring-yellow-400 bg-yellow-50" : ""}`}
-                />
-                {isYearSuspicious && (
-                  <p className="text-xs text-amber-600 mt-0.5">⚠️ ตรวจสอบปี</p>
-                )}
-              </div>
-              <div>
-                <Label className="text-sm">ยอดรวม (฿)</Label>
-                <Input
-                  type="number"
-                  value={grandTotal}
-                  onChange={(e) => setGrandTotal(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
-                  placeholder="0.00"
-                  className="mt-1 h-11"
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-sm">หมวดหมู่</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="mt-1 h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* เหลือกี่ใบ */}
-          {items.length > 1 && (
-            <p className="text-xs text-center text-muted-foreground">
-              เหลืออีก {items.length - 1} ใบที่ต้องตรวจ
+        <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0 bg-background">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={() => setSelectedId(null)}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">ตรวจสอบใบเสร็จ</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {idx + 1}/{items.length} · {selectedItem.fileName}
             </p>
-          )}
-
-          {/* ปุ่ม */}
-          <div className="flex gap-2 pt-1">
-            <Button
-              variant="outline"
-              className="flex-1 h-11 gap-1.5 text-muted-foreground"
-              onClick={handleSkip}
-            >
-              <SkipForward className="h-4 w-4" />
-              ข้าม
-            </Button>
-            <Button
-              className="flex-2 flex-1 h-11 gap-1.5 bg-primary"
-              onClick={handleSave}
-              disabled={!storeName.trim() && !grandTotal}
-            >
-              <Save className="h-4 w-4" />
-              บันทึก
-            </Button>
+          </div>
+          <div className="flex gap-1 shrink-0">
+            {selectedItem.manualEntry ? (
+              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                <PenLine className="h-3 w-3 mr-1" />กรอกเอง
+              </Badge>
+            ) : selectedItem.result.confidence === "low" ? (
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                <AlertTriangle className="h-3 w-3 mr-1" />ไม่มั่นใจ
+              </Badge>
+            ) : null}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+
+        {/* รูปใบเสร็จ — ใหญ่ขึ้น */}
+        {selectedItem.imageData ? (
+          <div
+            className="shrink-0 bg-muted flex items-center justify-center overflow-hidden"
+            style={{ height: "42vh" }}
+          >
+            <img
+              src={selectedItem.imageData}
+              alt="ใบเสร็จ"
+              className="h-full w-full object-contain"
+            />
+          </div>
+        ) : (
+          <div
+            className="shrink-0 bg-muted flex flex-col items-center justify-center gap-2"
+            style={{ height: "18vh" }}
+          >
+            <FileX className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">ไม่มีรูปภาพ</p>
+          </div>
+        )}
+
+        {/* Form */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <div>
+            <Label className="text-sm">ร้านค้า / ชื่อรายการ</Label>
+            <Input
+              value={edits.storeName}
+              onChange={(e) => updateEdit(selectedItem.id, "storeName", e.target.value)}
+              placeholder="ชื่อร้านหรือรายการ"
+              className="mt-1 h-11"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-sm">วันที่</Label>
+              <Input
+                type="date"
+                value={edits.date}
+                onChange={(e) => updateEdit(selectedItem.id, "date", e.target.value)}
+                className={`mt-1 h-11 ${isYearSuspicious ? "ring-2 ring-yellow-400 bg-yellow-50" : ""}`}
+              />
+              {isYearSuspicious && (
+                <p className="text-xs text-amber-600 mt-0.5">⚠️ ตรวจสอบปี</p>
+              )}
+            </div>
+            <div>
+              <Label className="text-sm">ยอดรวม (฿)</Label>
+              <Input
+                type="number"
+                value={edits.grandTotal}
+                onChange={(e) =>
+                  updateEdit(selectedItem.id, "grandTotal", parseFloat(e.target.value) || 0)
+                }
+                placeholder="0.00"
+                className="mt-1 h-11"
+                step="0.01"
+                min="0"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-sm">หมวดหมู่</Label>
+            <Select
+              value={edits.category}
+              onValueChange={(v) => updateEdit(selectedItem.id, "category", v)}
+            >
+              <SelectTrigger className="mt-1 h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 px-4 py-3 border-t shrink-0 bg-background">
+          <Button
+            variant="outline"
+            className="flex-1 h-12 gap-2 text-muted-foreground"
+            onClick={() => {
+              onSkip(selectedItem);
+              setSelectedId(null);
+            }}
+          >
+            <SkipForward className="h-4 w-4" />
+            ข้าม
+          </Button>
+          <Button
+            className="flex-[2] h-12 gap-2"
+            onClick={() => {
+              onSave(selectedItem, edits);
+              setSelectedId(null);
+            }}
+          >
+            <Save className="h-4 w-4" />
+            บันทึก
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════
+  // LIST VIEW — ภาพรวมทุกใบ
+  // ════════════════════════════════════════
+  return (
+    <div className="fixed inset-0 z-50 bg-background flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3 border-b shrink-0 bg-background">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-base">รอตรวจสอบ {items.length} ใบ</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              แตะใบไหนก็ได้เพื่อแก้ไข หรือบันทึกทั้งหมดด้วยค่าที่ AI อ่านมา
+            </p>
+          </div>
+          <Button
+            className="gap-2 h-10 shrink-0"
+            onClick={handleSaveAll}
+            disabled={savingAll}
+          >
+            {savingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            {savingAll ? "กำลังบันทึก..." : "บันทึกทั้งหมด"}
+          </Button>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {items.map((item) => {
+          const edits = editsMap[item.id];
+          const storeName = edits?.storeName || "ไม่ทราบร้าน";
+          const total = edits?.grandTotal ?? 0;
+          const date = edits?.date || "";
+
+          return (
+            <div
+              key={item.id}
+              className="border border-border rounded-xl overflow-hidden bg-card shadow-sm"
+            >
+              {/* แตะเพื่อดูรายละเอียด */}
+              <button
+                className="w-full flex gap-3 items-center p-3 text-left active:bg-muted/50 transition-colors"
+                onClick={() => setSelectedId(item.id)}
+              >
+                {/* Thumbnail */}
+                <div className="shrink-0 w-[68px] h-[68px] rounded-lg overflow-hidden bg-muted flex items-center justify-center border border-border/50">
+                  {item.imageData ? (
+                    <img
+                      src={item.imageData}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl">📄</span>
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate text-sm">
+                    {storeName || <span className="text-muted-foreground italic">ไม่ทราบร้าน</span>}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {date} · ฿{total.toLocaleString("th-TH", { minimumFractionDigits: 0 })}
+                  </p>
+                  <div className="flex gap-1 mt-1.5 flex-wrap">
+                    {item.manualEntry ? (
+                      <Badge
+                        variant="outline"
+                        className="text-xs py-0 h-5 bg-orange-50 text-orange-700 border-orange-200"
+                      >
+                        <PenLine className="h-3 w-3 mr-0.5" />กรอกเอง
+                      </Badge>
+                    ) : item.result.confidence === "low" ? (
+                      <Badge
+                        variant="outline"
+                        className="text-xs py-0 h-5 bg-amber-50 text-amber-700 border-amber-200"
+                      >
+                        <AlertTriangle className="h-3 w-3 mr-0.5" />ไม่มั่นใจ
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Chevron */}
+                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+              </button>
+
+              {/* Quick skip */}
+              <div className="border-t border-border/40 px-3 py-1.5 flex justify-end bg-muted/30">
+                <button
+                  className="text-xs text-muted-foreground flex items-center gap-1 active:opacity-60 py-0.5"
+                  onClick={() => onSkip(item)}
+                >
+                  <SkipForward className="h-3 w-3" />
+                  ข้ามใบนี้
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
