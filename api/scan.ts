@@ -118,8 +118,12 @@ async function callGemini(apiKey: string, model: string, mimeType: string, image
 
   const result = await res.json();
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  console.log("[scan] raw response:", text.slice(0, 300));
   const jsonStr = extractOutermostJson(text);
-  if (!jsonStr) throw new Error("ไม่สามารถอ่าน JSON จากคำตอบ AI ได้");
+  if (!jsonStr) {
+    console.error("[scan] full response:", JSON.stringify(result).slice(0, 500));
+    throw new Error(`ไม่สามารถอ่าน JSON: "${text.slice(0, 120)}"`);
+  }
   return JSON.parse(jsonStr);
 }
 
