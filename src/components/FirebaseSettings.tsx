@@ -10,7 +10,7 @@ import { Database, LogOut, Trash2, Download } from "lucide-react";
 import type { User } from "firebase/auth";
 import type { Receipt } from "@/lib/receipt-store";
 import { downloadCSV } from "@/lib/receipt-store";
-import { deduplicateFirestore } from "@/lib/firestore-store";
+import { deduplicateFirestore, deleteReceiptsByIds } from "@/lib/firestore-store";
 import { toast } from "sonner";
 
 interface FirebaseSettingsProps {

@@ -57,6 +57,14 @@ export async function deleteReceiptFS(uid: string, id: string): Promise<void> {
   await deleteDoc(receiptRef(uid, id));
 }
 
+export async function deleteReceiptsByIds(uid: string, ids: string[]): Promise<number> {
+  let count = 0;
+  for (const id of ids) {
+    try { await deleteDoc(receiptRef(uid, id)); count++; } catch {}
+  }
+  return count;
+}
+
 export async function getAllReceiptsFS(uid: string): Promise<Receipt[]> {
   const q = query(receiptsCol(uid), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);

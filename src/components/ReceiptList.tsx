@@ -92,10 +92,14 @@ export default function ReceiptList({ receipts, profile, uid, onChanged, onDupli
     let cancelled = false;
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      // ลบจาก Firestore
-      deleteReceiptFS(uid, id).catch((err) => console.error("Delete error:", err));
-      // ลบรูปจาก Storage (ไม่ block)
+      // ลบจาก Firestore + Storage + Google Sheets พร้อมกัน
+      deleteReceiptFS(uid, id).catch((err) => console.error("Delete Firestore error:", err));
       deleteReceiptImage(uid, id).catch(() => {});
+      fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      }).catch(() => {});
       setPendingDeleteIds((prev) => {
         const s = new Set(prev);
         s.delete(id);

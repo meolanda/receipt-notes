@@ -297,10 +297,22 @@ export function useReceiptForm({
       if (editData) {
         // แก้ไขรายการเดิม
         await updateReceiptFS(uid, editData.id, receiptData);
-        // ถ้ามีรูปใหม่ → อัปโหลด
+        // ถ้ามีรูปใหม่ → อัปโหลด + อัพเดท Firestore + Sheets
+        let imageUrl = editData.imageUrl || "";
         if (imageData && imageData !== editData.imageData) {
-          uploadReceiptImage(uid, editData.id, imageData).catch(console.error);
+          try {
+            imageUrl = await uploadReceiptImage(uid, editData.id, imageData);
+            await updateReceiptFS(uid, editData.id, { imageUrl });
+          } catch (err) {
+            console.warn("[upload] failed:", err);
+          }
         }
+        // Sync ไป Google Sheets (background)
+        fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update", receipt: { ...editData, ...receiptData, imageUrl } }),
+        }).catch(() => {});
         toast.success("แก้ไขใบเสร็จเรียบร้อย! ✏️");
       } else {
         // ตรวจสอบซ้ำก่อนบันทึก
@@ -319,10 +331,25 @@ export function useReceiptForm({
 
         // บันทึก Firestore
         const saved = await saveReceiptFS(uid, receiptData);
-        // อัปโหลดรูป (background)
+
+        // อัปโหลดรูป → รอเพื่อเอา imageUrl ก่อน sync Sheets
+        let imageUrl = "";
         if (imageData) {
-          uploadReceiptImage(uid, saved.id, imageData).catch(console.error);
+          try {
+            imageUrl = await uploadReceiptImage(uid, saved.id, imageData);
+            await updateReceiptFS(uid, saved.id, { imageUrl });
+          } catch (err) {
+            console.warn("[upload] failed:", err);
+          }
         }
+
+        // Sync ไป Google Sheets (background — ถ้า fail ข้อมูลยังอยู่ใน Firestore)
+        fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ receipt: { ...saved, imageUrl } }),
+        }).catch(() => {});
+
         toast.success("บันทึกใบเสร็จเรียบร้อย! 🎉");
       }
 
